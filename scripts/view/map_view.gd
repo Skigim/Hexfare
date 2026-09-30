@@ -6,6 +6,7 @@ extends Node2D
 var game: Game
 var viewer: Player
 var reveal_all := false
+var animate := true                 # off while fast-forwarding turns (automation)
 
 var terrain: TerrainLayer
 var borders: BorderLayer
@@ -21,6 +22,8 @@ var effects: Node2D
 var _unit_views: Dictionary = {}    # unit id -> UnitView
 var _city_views: Dictionary = {}    # city id -> CityView
 var _banners: Dictionary = {}       # city id -> CityBanner
+var _banner_scale := 1.0
+var _unit_scale := 1.0
 
 
 func setup(g: Game, viewing_player: Player) -> void:
@@ -62,6 +65,16 @@ func set_grid(on: bool) -> void:
 	overlays.queue_redraw()
 
 
+## Keeps banners and unit tokens readable when zoomed out.
+func set_camera_zoom(z: float) -> void:
+	_banner_scale = clampf(0.85 / z, 1.0, 2.4)
+	_unit_scale = clampf(0.7 / z, 1.0, 1.8)
+	for b in _banners.values():
+		b.scale = Vector2.ONE * _banner_scale
+	for v in _unit_views.values():
+		v.scale = Vector2.ONE * _unit_scale
+
+
 func is_visible_to_viewer(c: Vector2i) -> bool:
 	return reveal_all or viewer == null or Visibility.is_visible(game.state, viewer, c)
 
@@ -93,6 +106,7 @@ func _sync_cities(s: GameState) -> void:
 			city_layer.add_child(v)
 			_city_views[city.id] = v
 			var b := CityBanner.new()
+			b.scale = Vector2.ONE * _banner_scale
 			banner_layer.add_child(b)
 			_banners[city.id] = b
 		var explored := is_explored_by_viewer(city.coord)
@@ -111,6 +125,7 @@ func _sync_units(s: GameState) -> void:
 		var v: UnitView = _unit_views.get(u.id)
 		if v == null:
 			v = UnitView.new()
+			v.scale = Vector2.ONE * _unit_scale
 			unit_layer.add_child(v)
 			_unit_views[u.id] = v
 			v.position = unit_position(u)
@@ -145,7 +160,7 @@ func unit_view(uid: int) -> UnitView:
 
 func _on_unit_moved(u: Unit, traveled: Array) -> void:
 	var v: UnitView = _unit_views.get(u.id)
-	if v == null or not is_visible_to_viewer(u.coord):
+	if not animate or v == null or not is_visible_to_viewer(u.coord):
 		return
 	var pts: Array = []
 	for i in range(1, traveled.size()):
@@ -158,7 +173,7 @@ func _on_unit_moved(u: Unit, traveled: Array) -> void:
 func _on_combat(info: Dictionary) -> void:
 	var target: Vector2i = info.target
 	var from: Vector2i = info.from
-	if not (is_visible_to_viewer(target) or is_visible_to_viewer(from)):
+	if not animate or not (is_visible_to_viewer(target) or is_visible_to_viewer(from)):
 		return
 	var to_pos := Hex.to_pixel(target)
 	var from_pos := Hex.to_pixel(from)

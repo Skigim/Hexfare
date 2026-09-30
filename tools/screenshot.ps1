@@ -14,6 +14,7 @@ if (-not $Godot) {
         Select-Object -First 1 -ExpandProperty FullName
 }
 if (-not $Godot) { throw "Godot console executable not found; pass -Godot <path>" }
-$outPath = [System.IO.Path]::GetFullPath((Join-Path (Get-Location) $Out)).Replace("\", "/")
+if (-not [System.IO.Path]::IsPathRooted($Out)) { $Out = Join-Path (Get-Location) $Out }
+$outPath = [System.IO.Path]::GetFullPath($Out).Replace("\", "/")
 New-Item -ItemType Directory -Force (Split-Path -Parent $outPath) | Out-Null
 & $Godot --path $project $Scene -- @GameArgs "--screenshot=$outPath"

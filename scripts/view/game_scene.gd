@@ -21,6 +21,7 @@ var show_grid := false
 var _combat_preview: Dictionary = {}
 var _dirty := true
 var _args: Dictionary = {}
+var _last_zoom := 0.0
 
 
 func _ready() -> void:
@@ -94,6 +95,9 @@ func _mark_dirty() -> void:
 
 
 func _process(_delta: float) -> void:
+	if not is_equal_approx(camera.zoom.x, _last_zoom):
+		_last_zoom = camera.zoom.x
+		map_view.set_camera_zoom(_last_zoom)
 	if _dirty:
 		_refresh()
 
@@ -130,6 +134,7 @@ func _update_highlights() -> void:
 	hl.targets = []
 	hl.selected = Hex.NONE
 	hl.range_center = Hex.NONE
+	hl.worked = []
 	var u := _selected_own_unit()
 	var any_unit := game.state.get_unit(selected_unit_id)
 	if any_unit != null:
@@ -144,6 +149,8 @@ func _update_highlights() -> void:
 	var city := game.state.get_city(selected_city_id)
 	if city != null:
 		hl.selected = city.coord
+		if city.owner == human.id:
+			hl.worked = city.worked.duplicate()
 		if targeting == "city":
 			hl.range_center = city.coord
 			hl.range_radius = int(Defs.rules.city.ranged_range)
@@ -591,11 +598,13 @@ func _focus_on_start() -> void:
 func _run_automation() -> void:
 	if _args.has("reveal"):
 		map_view.set_reveal_all(true)
+	map_view.animate = false
 	for i in int(_args.get("autoplay", "0")):
 		if game.state.game_over or not game.is_human_turn():
 			break
 		AIPlayer.take_turn(game, human)
 		game.end_turn()
+	map_view.animate = true
 	match _args.get("select", ""):
 		"city":
 			var cities := game.state.player_cities(human.id)

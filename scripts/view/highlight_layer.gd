@@ -8,6 +8,7 @@ var selected := Hex.NONE
 var hover := Hex.NONE
 var range_center := Hex.NONE     # draw a range ring (city bombard / ranged)
 var range_radius := 0
+var worked: Array = []           # tiles worked by the selected city (citizen markers)
 
 
 func _draw() -> void:
@@ -21,6 +22,13 @@ func _draw() -> void:
 	for c in targets:
 		_fill(c, hexagon, Color(1, 0.2, 0.15, 0.28))
 		_outline(c, Color(1, 0.3, 0.25, 0.95), 4.0)
+	var citizen := Tex.icon("character")
+	for c in worked:
+		var p := Hex.to_pixel(c) + Vector2(-30, 26)
+		draw_circle(p, 15, Color(0.1, 0.12, 0.15, 0.92))
+		draw_arc(p, 15, 0, TAU, 32, Tex.YIELD_COLORS.food, 2.0, true)
+		if citizen != null:
+			draw_texture_rect(citizen, Rect2(p - Vector2(10, 10), Vector2(20, 20)), false)
 	if hover != Hex.NONE:
 		_outline(hover, Color(1, 1, 1, 0.8), 3.0)
 	if selected != Hex.NONE:

@@ -69,6 +69,12 @@ func show_combat(game: Game, info: Dictionary) -> void:
 		UITheme.GOOD if dealt >= taken else UITheme.BAD))
 	if info.ranged:
 		_col.add_child(UI.label("Ranged attack: no retaliation.", 13, UITheme.TEXT_DIM))
+	elif info.attacker_kind == "unit" and taken >= s.get_unit(info.attacker_unit_id).hp:
+		_col.add_child(UI.label("Warning: your unit will probably die!", 15, UITheme.BAD))
+	if info.defender_kind == "city" and not info.ranged:
+		var city := s.get_city(info.defender_city_id)
+		if dealt >= city.hp and s.get_unit(info.attacker_unit_id).can_capture_cities():
+			_col.add_child(UI.label("This attack should capture the city!", 15, UITheme.GOOD))
 
 
 func _mods_row(title: String, total: int, mods: Array) -> Label:
