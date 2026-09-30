@@ -53,6 +53,23 @@ func test_map_generation_is_deterministic_and_sane() -> void:
 			assert_true(Hex.distance(a.starts[i], a.starts[j]) >= 4, "starts spread out")
 
 
+func test_resource_mix_follows_weights() -> void:
+	var counts := {}
+	var placed := 0
+	for seed_value in range(1, 6):
+		var g := MapGenerator.generate(44, 28, seed_value, 4)
+		for t in g.map.tiles:
+			if t.resource != "":
+				counts[t.resource] = counts.get(t.resource, 0) + 1
+				placed += 1
+	var weight_sum := 0
+	for id in Defs.resources:
+		weight_sum += int(Defs.resources[id].weight)
+	for id in Defs.resources:
+		var expected := float(Defs.resources[id].weight) / weight_sum
+		assert_between(float(counts.get(id, 0)) / placed, expected * 0.5, expected * 1.6, "share of %s" % id)
+
+
 func test_many_seeds_place_all_starts() -> void:
 	for seed_value in range(1, 13):
 		var g := MapGenerator.generate(32, 20, seed_value, 3)

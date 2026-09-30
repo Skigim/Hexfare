@@ -228,25 +228,35 @@ static func _resource_fits(res: Dictionary, t: Tile) -> bool:
 	return true
 
 
+## Picks each resource by its weight, then a random free tile it fits on, so the overall mix
+## follows the data whatever the terrain (choosing per tile would put gold on every forest).
 static func _place_resources(map: HexMap, starts: Array, rng: RandomNumberGenerator, density: float) -> void:
-	for t in map.tiles:
-		if t.coord in starts or rng.randf() >= density:
-			continue
-		var total := 0
-		var options: Array = []
-		for id in Defs.resources:
-			var res: Dictionary = Defs.resources[id]
-			if _resource_fits(res, t):
-				options.append(id)
-				total += int(res.get("weight", 1))
-		if options.is_empty():
-			continue
+	var ids: Array = Defs.resources.keys()
+	var total := 0
+	var spots := {}  # id -> tiles it could go on
+	for id in ids:
+		total += int(Defs.resources[id].get("weight", 1))
+		spots[id] = map.tiles.filter(func(t): return not (t.coord in starts) and _resource_fits(Defs.resources[id], t))
+	if total <= 0:
+		return
+	var land := map.tiles.filter(func(t): return t.is_passable_land()).size()
+	for i in int(land * density):
 		var roll := rng.randi() % total
-		for id in options:
+		for id in ids:
 			roll -= int(Defs.resources[id].get("weight", 1))
 			if roll < 0:
-				t.resource = id
+				_place_on_free_spot(spots[id], id, rng)
 				break
+
+
+static func _place_on_free_spot(spots: Array, resource_id: String, rng: RandomNumberGenerator) -> void:
+	while not spots.is_empty():
+		var k := rng.randi() % spots.size()
+		var t: Tile = spots[k]
+		spots.remove_at(k)
+		if t.resource == "":
+			t.resource = resource_id
+			return
 
 
 static func _ensure_resource_near(map: HexMap, start: Vector2i, resource_id: String, radius: int, rng: RandomNumberGenerator) -> void:
