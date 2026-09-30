@@ -4,7 +4,7 @@ extends Node2D
 ## and translates player input into Game actions.
 ##
 ## Command-line options (after "--"), handy for automated screenshots:
-##   --seed=N --size=small|medium|large --players=N --autoplay=TURNS --reveal
+##   --seed=N --size=small|medium|large --players=N --load --autoplay=TURNS --reveal
 ##   --select=city|unit|military --tech --zoom=0.6
 ##   --hover=col,row --hover-enemy --hover-rel=dq,dr --screenshot=out.png --delay=1.0
 
@@ -28,6 +28,8 @@ var _last_zoom := 0.0
 func _ready() -> void:
 	Defs.ensure_loaded()
 	_args = DevTools.args()
+	if _args.has("load") and SaveLoad.exists():
+		Session.load_path = SaveLoad.QUICKSAVE
 	var is_new := true
 	if Session.load_path != "":
 		game = SaveLoad.load_game(Session.load_path)

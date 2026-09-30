@@ -311,6 +311,13 @@ func test_save_load_round_trip() -> void:
 	assert_true(loaded != null)
 	assert_eq(JSON.stringify(loaded.state.to_dict()), JSON.stringify(game.state.to_dict()))
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	# The loaded game (RNG included) must play on exactly like the original.
+	for g in [game, loaded]:
+		for i in 10:
+			AIPlayer.take_turn(g, g.current_player())
+			g.end_turn()
+	assert_eq(loaded.state.turn, 14)
+	assert_eq(JSON.stringify(loaded.state.to_dict()), JSON.stringify(game.state.to_dict()), "diverged after loading")
 
 
 # --- Messages --------------------------------------------------------------

@@ -179,6 +179,7 @@ The game scene accepts these flags after `--` (for example
 | Flag | Effect |
 |---|---|
 | `--seed=N`, `--size=small\|medium\|large`, `--players=N` | New-game settings |
+| `--load` | Start from the quick save instead |
 | `--autoplay=N` | The AI plays your civilization for N turns |
 | `--reveal` | Reveal the map |
 | `--select=city\|unit\|military` | Select your first city / first unit / unit nearest an enemy |
