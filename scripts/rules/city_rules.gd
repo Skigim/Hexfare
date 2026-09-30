@@ -134,7 +134,8 @@ static func upkeep(state: GameState, pid: int) -> int:
 		for b in city.buildings:
 			total += int(Defs.buildings[b].get("upkeep", 0))
 	var r: Dictionary = Defs.rules.units
-	var paid_units := maxi(0, state.player_units(pid).size() - cities.size() * int(r.free_units_per_city))
+	var free := int(r.get("free_units", 0)) + cities.size() * int(r.free_units_per_city)
+	var paid_units := maxi(0, state.player_units(pid).size() - free)
 	return total + paid_units * int(r.upkeep_per_unit)
 
 

@@ -47,7 +47,8 @@
 		"heal_field": 10,
 		"heal_friendly": 15,
 		"heal_city": 25,
-		"free_units_per_city": 2,
+		"free_units": 3,
+		"free_units_per_city": 1,
 		"upkeep_per_unit": 1
 	},
 	"combat": {
