@@ -7,6 +7,7 @@ const SUITES := [
 	"res://tests/test_hex.gd",
 	"res://tests/test_data.gd",
 	"res://tests/test_rules.gd",
+	"res://tests/test_ai.gd",
 	"res://tests/test_simulation.gd",
 ]
 
@@ -20,7 +21,11 @@ func _initialize() -> void:
 		if arg.begins_with("--only="):
 			only = arg.substr(7)
 	for path in SUITES:
-		var suite: TestCase = load(path).new()
+		var script: GDScript = load(path)
+		if script == null or not script.can_instantiate():
+			all_failures.append("%s: failed to load (parse error?)" % path)
+			continue
+		var suite: TestCase = script.new()
 		for m in suite.get_method_list():
 			var name: String = m.name
 			if not name.begins_with("test_") or (only != "" and not only in name):

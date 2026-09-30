@@ -26,7 +26,7 @@
 		"sight": 2,
 		"center_min_yields": {"food": 2, "production": 1},
 		"base_yields": {"science": 1, "culture": 1},
-		"pop_yields": {"science": 0.5},
+		"pop_yields": {"science": 0.5, "gold": 0.5},
 		"food_per_pop": 2,
 		"growth_base": 15,
 		"growth_per_pop": 8,

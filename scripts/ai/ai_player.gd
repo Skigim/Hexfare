@@ -99,19 +99,43 @@ static func _choose_build(game: Game, player: Player, city: City) -> Dictionary:
 	if available.has("settler") and can_grow and settlers < 2 and cities + settlers < _target_city_count(state) and military >= mini(cities, 3):
 		return {"kind": "unit", "id": "settler"}
 
-	if military < cities + 2 + state.turn / 20:
+	# Stay solvent: going broke disbands units, so everything past a minimal
+	# garrison has to fit in the budget.
+	var budget := _budget(state, player)
+	if military < cities + 2 + state.turn / 20 and (budget > 0 or military < cities):
 		var unit_id := _best_military(state, city, options)
 		if unit_id != "":
 			return {"kind": "unit", "id": unit_id}
 
-	for b in BUILDING_PRIORITY:
-		if available.get(b, "") == "building":
+	for b in _building_order(budget):
+		if available.get(b, "") == "building" and int(Defs.buildings[b].get("upkeep", 0)) < budget:
 			return {"kind": "building", "id": b}
 
-	var fallback := _best_military(state, city, options)
-	if fallback != "":
-		return {"kind": "unit", "id": fallback}
-	return {}
+	if budget > 0:
+		var fallback := _best_military(state, city, options)
+		if fallback != "":
+			return {"kind": "unit", "id": fallback}
+	return {}  # nothing affordable: production banks until something is
+
+
+## Net gold per turn, minus the upkeep of buildings already in production.
+static func _budget(state: GameState, player: Player) -> int:
+	var net := int(CityRules.player_income(state, player.id).net_gold)
+	for c in state.player_cities(player.id):
+		if c.build.get("kind", "") == "building":
+			net -= int(Defs.buildings[c.build.id].get("upkeep", 0))
+	return net
+
+
+## Buildings in the order the AI wants them; the market jumps the queue when money is tight.
+static func _building_order(budget: int) -> Array[String]:
+	var order: Array[String] = []
+	if budget < 3:
+		order.append("market")
+	for b in BUILDING_PRIORITY:
+		if not order.has(b):
+			order.append(b)
+	return order
 
 
 static func _best_military(state: GameState, city: City, options: Array) -> String:
