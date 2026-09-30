@@ -304,7 +304,7 @@ static func _complete_build(game: Game, city: City) -> bool:
 	var ud: Dictionary = Defs.units[id]
 	var pop_cost := int(ud.get("pop_cost", 0))
 	if pop_cost > 0 and city.population <= pop_cost:
-		game.notify(city.owner, "%s must grow before it can finish a %s." % [city.name, ud.name], city.coord)
+		game.notify(city.owner, "%s must grow before it can finish %s." % [city.name, Game.article(ud.name)], city.coord)
 		return false
 	var spawn := spawn_tile(state, city, id)
 	if spawn == Hex.NONE:
@@ -314,7 +314,7 @@ static func _complete_build(game: Game, city: City) -> bool:
 		city.population -= pop_cost
 		assign_work(state, city)
 	game.create_unit(id, city.owner, spawn)
-	game.notify(city.owner, "%s trained a %s." % [city.name, ud.name], spawn)
+	game.notify(city.owner, "%s trained %s." % [city.name, Game.article(ud.name)], spawn)
 	return true
 
 

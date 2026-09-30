@@ -89,6 +89,11 @@ func is_human_turn() -> bool:
 
 # --- Notifications ---------------------------------------------------------
 
+## "a Warrior", "an Archer".
+static func article(noun: String) -> String:
+	return ("an " if noun.left(1).to_lower() in ["a", "e", "i", "o", "u"] else "a ") + noun
+
+
 func notify(pid: int, text: String, coord: Vector2i = Hex.NONE) -> void:
 	var entry := {"turn": state.turn, "player": pid, "text": text, "coord": coord}
 	log_entries.append(entry)
@@ -354,7 +359,7 @@ func attack(unit_id: int, target: Vector2i) -> bool:
 		elif city.hp <= 0 and u.can_capture_cities():
 			_capture_city(city, u)
 		combat_resolved.emit(info)
-		notify(defender_owner, "%s was attacked by a %s %s." % [city.name, state.player(attacker_owner).name, u.display_name()], city.coord)
+		notify(defender_owner, "%s was attacked by %s." % [city.name, article("%s %s" % [state.player(attacker_owner).name, u.display_name()])], city.coord)
 	else:
 		var d := state.get_unit(info.defender_unit_id)
 		defender_owner = d.owner
@@ -364,13 +369,14 @@ func attack(unit_id: int, target: Vector2i) -> bool:
 		info.attacker_hp = u.hp
 		combat_resolved.emit(info)
 		var d_name := d.display_name()
+		var attacker_desc := article("%s %s" % [state.player(attacker_owner).name, u.display_name()])
 		if d.hp <= 0:
-			_kill_unit(d, "destroyed by a %s %s" % [state.player(attacker_owner).name, u.display_name()])
+			_kill_unit(d, "destroyed by %s" % attacker_desc)
 			notify(attacker_owner, "Your %s destroyed an enemy %s." % [u.display_name(), d_name], target)
 		else:
-			notify(defender_owner, "Your %s was attacked by a %s %s (%d HP left)." % [d_name, state.player(attacker_owner).name, u.display_name(), d.hp], target)
+			notify(defender_owner, "Your %s was attacked by %s (%d HP left)." % [d_name, attacker_desc, d.hp], target)
 		if u.hp <= 0:
-			_kill_unit(u, "destroyed attacking a %s" % d_name)
+			_kill_unit(u, "destroyed attacking %s" % article(d_name))
 		elif d.hp <= 0 and not u.is_ranged() and state.military_at(target) == null and state.city_at(target) == null:
 			state.move_unit_to(u, target)
 			_capture_civilians(u, target)
@@ -452,7 +458,7 @@ func _capture_city(city: City, conqueror: Unit) -> void:
 	if was_capital:
 		_relocate_capital(old_owner)
 	notify(new_owner, "You captured %s!" % city.name, city.coord)
-	notify(old_owner, "%s has fallen to the %s!" % [city.name, state.player(new_owner).name], city.coord)
+	notify(old_owner, "%s has fallen to %s!" % [city.name, state.player(new_owner).name], city.coord)
 	city_captured.emit(city, old_owner)
 	borders_changed.emit()
 	_check_elimination(old_owner)
@@ -619,7 +625,7 @@ func _begin_player_turn(p: Player) -> void:
 			var path := Pathfinder.find_path(state, u, u.destination)
 			if path.is_empty():
 				u.has_destination = false
-				notify(p.id, "A %s could not reach its destination." % u.display_name(), u.coord)
+				notify(p.id, "Your %s could not reach its destination." % u.display_name(), u.coord)
 			else:
 				_follow_path(u, path)
 

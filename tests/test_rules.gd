@@ -311,3 +311,11 @@ func test_save_load_round_trip() -> void:
 	assert_true(loaded != null)
 	assert_eq(JSON.stringify(loaded.state.to_dict()), JSON.stringify(game.state.to_dict()))
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+
+
+# --- Messages --------------------------------------------------------------
+
+func test_article() -> void:
+	assert_eq(Game.article("Warrior"), "a Warrior")
+	assert_eq(Game.article("Archer"), "an Archer")
+	assert_eq(Game.article("Eskar Horseman"), "an Eskar Horseman")

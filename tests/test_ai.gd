@@ -31,3 +31,11 @@ func test_ai_builds_within_its_budget() -> void:
 	city.population = 4  # 2 net gold: the market jumps the queue
 	CityRules.assign_work(s, city)
 	assert_eq(AIPlayer._choose_build(game, p, city), {"kind": "building", "id": "market"})
+
+
+func test_ai_considers_buildings_added_to_the_data() -> void:
+	Defs.buildings["test_hall"] = {"id": "test_hall", "name": "Test Hall", "icon": "award", "cost": 500, "upkeep": 0}
+	var order := AIPlayer._building_order(10)
+	Defs.buildings.erase("test_hall")
+	assert_eq(order.find("test_hall"), order.size() - 1, "unknown buildings go last")
+	assert_eq(order.slice(0, AIPlayer.BUILDING_PRIORITY.size()), AIPlayer.BUILDING_PRIORITY)

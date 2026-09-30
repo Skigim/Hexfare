@@ -128,6 +128,7 @@ static func _budget(state: GameState, player: Player) -> int:
 
 
 ## Buildings in the order the AI wants them; the market jumps the queue when money is tight.
+## Buildings missing from BUILDING_PRIORITY (e.g. newly added to the data) go last, cheapest first.
 static func _building_order(budget: int) -> Array[String]:
 	var order: Array[String] = []
 	if budget < 3:
@@ -135,6 +136,10 @@ static func _building_order(budget: int) -> Array[String]:
 	for b in BUILDING_PRIORITY:
 		if not order.has(b):
 			order.append(b)
+	var extra: Array = Defs.buildings.keys().filter(func(b): return not order.has(b))
+	extra.sort_custom(func(a, b): return int(Defs.buildings[a].cost) < int(Defs.buildings[b].cost))
+	for b in extra:
+		order.append(b)
 	return order
 
 

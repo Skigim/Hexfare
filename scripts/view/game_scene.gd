@@ -5,7 +5,8 @@ extends Node2D
 ##
 ## Command-line options (after "--"), handy for automated screenshots:
 ##   --seed=N --size=small|medium|large --players=N --autoplay=TURNS --reveal
-##   --select=city|unit --tech --zoom=0.6 --screenshot=out.png --delay=1.0
+##   --select=city|unit|military --tech --zoom=0.6
+##   --hover=col,row --hover-enemy --hover-rel=dq,dr --screenshot=out.png --delay=1.0
 
 var game: Game
 var human: Player
@@ -333,6 +334,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if hud.is_modal():
 		return
+	if event is InputEventMouseMotion and _args.has("screenshot"):
+		return  # keep the scripted hover; the real cursor may be over the window
 	if event is InputEventMouseMotion:
 		var c := _event_coord(event)
 		if c != hover:

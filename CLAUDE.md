@@ -1,0 +1,45 @@
+# Hexfare
+
+Generic Civ-style hex strategy framework in Godot 4.7 / GDScript. See README.md for rules,
+layout and how to extend the data.
+
+## Commands
+
+Godot 4.7 is installed via WinGet (not on PATH):
+`C:\Users\dwigh\AppData\Local\Microsoft\WinGet\Packages\GodotEngine.GodotEngine_Microsoft.Winget.Source_8wekyb3d8bbwe\Godot_v4.7-stable_win64_console.exe`
+(the scripts in `tools/` find it automatically).
+
+- All headless tests: `.\tools\run_tests.ps1` (runs `--import` first; ~25 s). One test: `-Only <name fragment>`.
+- UI smoke test (needs a window, drives the real scene with injected input):
+  `<godot> --path . res://tests/ui_smoke_test.tscn`
+- Screenshot for visual checks: `.\tools\screenshot.ps1 -Out <png> -GameArgs "--seed=5","--autoplay=40","--select=city"`.
+  Flags are documented at the top of `scripts/view/game_scene.gd` and in README.md. Look at the
+  PNG after UI changes; screenshot mode ignores the real mouse cursor.
+- Run the game: `<godot> --path .` (main menu) or `<godot> --path . res://scenes/game.tscn -- --seed=5`.
+
+## Architecture rules
+
+- `Game` (scripts/core/game.gd) is the only code that mutates `GameState`. UI and AI both go
+  through its action methods; add new player actions there.
+- Rules live in static modules under `scripts/rules/`; the UI calls the same functions for previews.
+- The view (`scripts/view/`, `scripts/ui/`) never mutates state. It re-syncs on `Game.changed`.
+- All randomness goes through `state.rng` so games are deterministic (a test checks this).
+- Everything saved must be JSON-safe; `Unit.ai` is AI scratch memory and must hold only
+  ints/strings/arrays/dictionaries. JSON numbers load as floats: pass loaded data through `Defs.normalize`.
+- Content and balance belong in `data/*.json`, not code. New units/buildings/techs need no code;
+  the AI picks them up automatically.
+- New test suites must be added to `SUITES` in `tests/run_tests.gd`.
+
+## GDScript pitfalls seen in this project
+
+- `:=` cannot infer a type from a Variant (dictionary values, untyped array elements, `Array`
+  methods): declare the type (`var owner: int = d.owner`).
+- Typed arrays: start from a typed variable (`var a: Array[String] = []`); a ternary of array
+  literals is not typed.
+- `City.buildings` and `Player.techs` are dictionaries (`id -> true`), not arrays.
+- Map clicks: convert `event.position` through the canvas transform (`GameScene._event_coord`);
+  `get_global_mouse_position()` breaks injected input in tests.
+- Don't write files with PowerShell `Set-Content`/`Out-File` (adds a BOM); use the Edit/Write tools.
+- A suite that fails to parse shows up as "failed to load"; the parse error is on stderr.
+- After adding a `class_name` script or an asset, Godot needs `--import` before `-s` scripts
+  can see it (`run_tests.ps1` does this).

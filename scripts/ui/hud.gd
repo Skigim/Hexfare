@@ -49,14 +49,18 @@ func _init() -> void:
 	feed.entry_clicked.connect(func(c): notification_clicked.emit(c))
 	root.add_child(feed)
 
+	# Unit panel, then the hovered-tile panel right after it (whatever the unit panel's width).
+	var bottom_left := UI.hbox(12)
+	bottom_left.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_anchor_bottom_left(bottom_left, 12)
+	root.add_child(bottom_left)
 	unit_panel = UnitPanel.new()
-	_anchor_bottom_left(unit_panel, 12)
+	unit_panel.size_flags_vertical = Control.SIZE_SHRINK_END
 	unit_panel.action.connect(func(a): unit_action.emit(a))
-	root.add_child(unit_panel)
-
+	bottom_left.add_child(unit_panel)
 	tile_panel = TilePanel.new()
-	_anchor_bottom_left(tile_panel, 424)
-	root.add_child(tile_panel)
+	tile_panel.size_flags_vertical = Control.SIZE_SHRINK_END
+	bottom_left.add_child(tile_panel)
 
 	var end_box := UI.vbox(6)
 	end_box.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT, Control.PRESET_MODE_MINSIZE, 12)
@@ -64,8 +68,10 @@ func _init() -> void:
 	end_box.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	end_box.alignment = BoxContainer.ALIGNMENT_END
 	root.add_child(end_box)
-	_end_hint = UI.label("", 15, UITheme.TEXT_DIM)
+	_end_hint = UI.label("", 15, UITheme.TEXT)
 	_end_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_end_hint.add_theme_color_override("font_outline_color", Color.BLACK)
+	_end_hint.add_theme_constant_override("outline_size", 5)
 	end_box.add_child(_end_hint)
 	_next_unit = UI.button("Next Unit (Tab)", func(): next_unit_pressed.emit(), "Select the next unit that needs orders")
 	end_box.add_child(_next_unit)
