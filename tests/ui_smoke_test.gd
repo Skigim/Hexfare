@@ -33,8 +33,11 @@ func _run() -> void:
 		else:
 			warrior = u
 	_check(settler != null and warrior != null, "start units exist")
+	_check(settler != null and scene.selected_unit_id == settler.id, "a new game starts with the settler selected")
 
-	# 1. Click the start tile until the settler is selected (tile cycles warrior -> settler).
+	# 1. Tab moves on to the warrior; clicking their shared tile cycles back to the settler.
+	await _key(KEY_TAB)
+	_check(scene.selected_unit_id == warrior.id, "Tab selects the next unit")
 	for i in 3:
 		if scene.selected_unit_id == settler.id:
 			break

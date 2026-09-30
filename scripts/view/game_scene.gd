@@ -595,7 +595,8 @@ func _focus_on_start() -> void:
 		camera.focus_on(Hex.to_pixel(units[0].coord), false)
 	elif not cities.is_empty():
 		camera.focus_on(Hex.to_pixel(cities[0].coord), false)
-	_select_next_unit(false)
+	if selected_unit_id == -1:  # a new game already selected one on turn_started
+		_select_next_unit(false)
 
 
 # --- Automation (screenshots / demos) --------------------------------------
