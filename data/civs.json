@@ -1,0 +1,8 @@
+[
+	{"name": "Arden", "color": "#2f6fd6", "cities": ["Arden", "Westmere", "Highcliff", "Stonebridge", "Ashford", "Millbrook", "Fairhaven", "Redwater", "Oakvale", "Dunmere", "Greywick", "Northgate", "Elmstead", "Brightwater"]},
+	{"name": "Borea", "color": "#d23b3b", "cities": ["Borea", "Frostholm", "Karsk", "Vendel", "Iskar", "Tolvik", "Skarn", "Halvard", "Nordby", "Ulfheim", "Rimeport", "Glacis", "Hvit", "Stormvik"]},
+	{"name": "Calder", "color": "#e3b21f", "cities": ["Calder", "Sunmere", "Ambergate", "Goldcrest", "Harrowfield", "Lindon", "Marrow", "Pennick", "Quarry", "Saltmarsh", "Thornby", "Wexley", "Yarrow", "Corvale"]},
+	{"name": "Dravia", "color": "#8e44ad", "cities": ["Dravia", "Velmora", "Istrana", "Korvia", "Lunesk", "Morava", "Nirel", "Ostrava", "Pravel", "Rusk", "Selvra", "Tarnis", "Ulmira", "Zelvo"]},
+	{"name": "Eskar", "color": "#e67e22", "cities": ["Eskar", "Dunepoint", "Kharim", "Samir", "Tafari", "Oasis", "Qadir", "Rahal", "Sirocco", "Zafra", "Bazra", "Minar", "Nahar", "Jaddah"]},
+	{"name": "Feyland", "color": "#12a38a", "cities": ["Feyland", "Glenmoor", "Aldercross", "Brackenford", "Cedarholt", "Dewhollow", "Fernbrook", "Hazelmere", "Ivywood", "Larchmont", "Mosswick", "Rowanhill", "Willowby", "Thistledown"]}
+]

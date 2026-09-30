@@ -1,0 +1,82 @@
+{
+	"terrains": {
+		"grassland": {
+			"name": "Grassland",
+			"yields": {"food": 2},
+			"move_cost": 1,
+			"water": false,
+			"forest_allowed": true,
+			"art": {
+				"flat": ["grass_05"],
+				"forest": ["grass_12", "grass_13"],
+				"hills": ["grass_15"],
+				"hills_forest": ["grass_16"],
+				"mountains": ["grass_14"]
+			}
+		},
+		"plains": {
+			"name": "Plains",
+			"yields": {"food": 1, "production": 1},
+			"move_cost": 1,
+			"water": false,
+			"forest_allowed": true,
+			"art": {
+				"flat": ["dirt_06"],
+				"forest": ["dirt_12", "dirt_13"],
+				"hills": ["dirt_15"],
+				"hills_forest": ["dirt_17"],
+				"mountains": ["dirt_18"]
+			}
+		},
+		"desert": {
+			"name": "Desert",
+			"yields": {},
+			"move_cost": 1,
+			"water": false,
+			"forest_allowed": false,
+			"art": {
+				"flat": ["sand_07", "sand_07", "sand_13"],
+				"hills": ["sand_16"],
+				"mountains": ["sand_17"]
+			}
+		},
+		"tundra": {
+			"name": "Tundra",
+			"yields": {"food": 1},
+			"move_cost": 1,
+			"water": false,
+			"forest_allowed": true,
+			"art": {
+				"flat": ["stone_07"],
+				"forest": ["stone_12", "stone_13"],
+				"hills": ["stone_07+rockGrey_medium1"],
+				"hills_forest": ["stone_12+rockGrey_small1"],
+				"mountains": ["stone_07+rockGrey_large"]
+			}
+		},
+		"coast": {
+			"name": "Coast",
+			"yields": {"food": 1, "gold": 1},
+			"move_cost": 1,
+			"water": true,
+			"tint": "#8fd0ee",
+			"art": {"flat": ["stone_07"]}
+		},
+		"ocean": {
+			"name": "Ocean",
+			"yields": {"food": 1},
+			"move_cost": 1,
+			"water": true,
+			"tint": "#4d84cf",
+			"art": {"flat": ["stone_07"]}
+		}
+	},
+	"elevations": {
+		"flat": {"name": "Flat", "yields": {}, "move_cost": 0, "defense": 0},
+		"hills": {"name": "Hills", "yields": {"production": 1}, "move_cost": 1, "defense": 3},
+		"mountains": {"name": "Mountains", "yields": {}, "move_cost": 0, "defense": 0, "passable": false, "workable": false}
+	},
+	"features": {
+		"forest": {"name": "Forest", "yields": {"production": 1}, "move_cost": 1, "defense": 3}
+	}
+}

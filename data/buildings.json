@@ -1,0 +1,46 @@
+{
+	"palace": {
+		"name": "Palace", "icon": "crown_a", "buildable": false,
+		"cost": 0, "upkeep": 0, "defense": 5,
+		"yields": {"production": 3, "science": 2, "gold": 3, "culture": 1}
+	},
+	"monument": {
+		"name": "Monument", "icon": "award",
+		"cost": 35, "upkeep": 0,
+		"yields": {"culture": 2}
+	},
+	"granary": {
+		"name": "Granary", "icon": "structure_farm", "tech": "pottery",
+		"cost": 50, "upkeep": 1,
+		"yields": {"food": 2}
+	},
+	"library": {
+		"name": "Library", "icon": "book_open", "tech": "writing",
+		"cost": 65, "upkeep": 1,
+		"yields": {"science": 2}
+	},
+	"walls": {
+		"name": "Walls", "icon": "structure_wall", "tech": "masonry",
+		"cost": 55, "upkeep": 1, "defense": 8, "hp": 100
+	},
+	"market": {
+		"name": "Market", "icon": "pouch", "tech": "currency",
+		"cost": 80, "upkeep": 0,
+		"yields": {"gold": 2}, "yield_percent": {"gold": 25}
+	},
+	"workshop": {
+		"name": "Workshop", "icon": "gear", "tech": "construction",
+		"cost": 80, "upkeep": 1,
+		"yields": {"production": 2}, "yield_percent": {"production": 10}
+	},
+	"temple": {
+		"name": "Temple", "icon": "structure_church", "tech": "philosophy",
+		"cost": 90, "upkeep": 1,
+		"yields": {"culture": 3}
+	},
+	"university": {
+		"name": "University", "icon": "flask_half", "tech": "education",
+		"cost": 140, "upkeep": 2,
+		"yields": {"science": 2}, "yield_percent": {"science": 50}
+	}
+}

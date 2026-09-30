@@ -1,0 +1,69 @@
+{
+	"map": {
+		"sizes": {
+			"small": {"name": "Small", "width": 32, "height": 20, "players": 3},
+			"medium": {"name": "Medium", "width": 44, "height": 28, "players": 4},
+			"large": {"name": "Large", "width": 56, "height": 36, "players": 6}
+		},
+		"land_ratio": 0.44,
+		"mountain_ratio": 0.07,
+		"hills_ratio": 0.18,
+		"forest_ratio": 0.28,
+		"desert_ratio": 0.14,
+		"tundra_latitude": 0.78,
+		"resource_density": 0.12,
+		"edge_water": 2,
+		"min_start_distance": 7
+	},
+	"start": {
+		"units": ["settler", "warrior"],
+		"gold": 10
+	},
+	"city": {
+		"min_distance": 3,
+		"work_radius": 3,
+		"initial_radius": 1,
+		"sight": 2,
+		"center_min_yields": {"food": 2, "production": 1},
+		"base_yields": {"science": 1, "culture": 1},
+		"pop_yields": {"science": 0.5},
+		"food_per_pop": 2,
+		"growth_base": 15,
+		"growth_per_pop": 8,
+		"growth_exponent": 1.5,
+		"border_base": 10,
+		"border_per_tile": 6,
+		"border_exponent": 1.3,
+		"base_hp": 200,
+		"heal_per_turn": 20,
+		"base_strength": 12,
+		"strength_per_pop": 2,
+		"garrison_strength_ratio": 0.33,
+		"ranged_range": 2,
+		"capture_hp_ratio": 0.25
+	},
+	"units": {
+		"max_hp": 100,
+		"heal_field": 10,
+		"heal_friendly": 15,
+		"heal_city": 25,
+		"free_units_per_city": 2,
+		"upkeep_per_unit": 1
+	},
+	"combat": {
+		"base_damage": 30,
+		"strength_scale": 25,
+		"random_min": 0.8,
+		"random_max": 1.2,
+		"fortify_bonus": 4,
+		"wounded_penalty_per_10hp": 1
+	},
+	"economy": {
+		"purchase_multiplier": 3
+	},
+	"victory": {
+		"domination": true,
+		"science": true,
+		"turn_limit": 300
+	}
+}

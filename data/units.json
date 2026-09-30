@@ -1,0 +1,35 @@
+{
+	"settler": {
+		"name": "Settler", "class": "civilian", "icon": "flag_triangle",
+		"cost": 55, "strength": 0, "moves": 2, "sight": 2,
+		"abilities": ["found_city"], "pop_cost": 1
+	},
+	"warrior": {
+		"name": "Warrior", "class": "melee", "icon": "character",
+		"cost": 30, "strength": 20, "moves": 2, "sight": 2
+	},
+	"archer": {
+		"name": "Archer", "class": "ranged", "icon": "bow", "tech": "archery",
+		"cost": 45, "strength": 15, "ranged_strength": 25, "range": 2, "moves": 2, "sight": 2
+	},
+	"spearman": {
+		"name": "Spearman", "class": "melee", "icon": "shield", "tech": "bronze_working",
+		"cost": 50, "strength": 25, "moves": 2, "sight": 2,
+		"bonus_vs": {"mounted": 10}
+	},
+	"horseman": {
+		"name": "Horseman", "class": "mounted", "icon": "chess_knight", "tech": "horseback_riding",
+		"requires_resource": "horses",
+		"cost": 65, "strength": 30, "moves": 4, "sight": 2
+	},
+	"swordsman": {
+		"name": "Swordsman", "class": "melee", "icon": "sword", "tech": "iron_working",
+		"requires_resource": "iron",
+		"cost": 75, "strength": 36, "moves": 2, "sight": 2
+	},
+	"catapult": {
+		"name": "Catapult", "class": "siege", "icon": "fire", "tech": "mathematics",
+		"cost": 85, "strength": 18, "ranged_strength": 32, "range": 2, "moves": 2, "sight": 2,
+		"bonus_vs": {"city": 12}
+	}
+}

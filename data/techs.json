@@ -1,0 +1,17 @@
+{
+	"pottery":          {"name": "Pottery",          "tier": 1, "cost": 25,  "requires": []},
+	"animal_husbandry": {"name": "Animal Husbandry", "tier": 1, "cost": 25,  "requires": []},
+	"archery":          {"name": "Archery",          "tier": 1, "cost": 25,  "requires": []},
+	"mining":           {"name": "Mining",           "tier": 1, "cost": 25,  "requires": [],
+		"tile_bonuses": [{"elevation": "hills", "yields": {"production": 1}}]},
+	"writing":          {"name": "Writing",          "tier": 2, "cost": 50,  "requires": ["pottery"]},
+	"masonry":          {"name": "Masonry",          "tier": 2, "cost": 50,  "requires": ["mining"]},
+	"bronze_working":   {"name": "Bronze Working",   "tier": 2, "cost": 50,  "requires": ["mining"]},
+	"horseback_riding": {"name": "Horseback Riding", "tier": 2, "cost": 50,  "requires": ["animal_husbandry"]},
+	"mathematics":      {"name": "Mathematics",      "tier": 3, "cost": 90,  "requires": ["writing", "archery"]},
+	"iron_working":     {"name": "Iron Working",     "tier": 3, "cost": 90,  "requires": ["bronze_working"]},
+	"currency":         {"name": "Currency",         "tier": 3, "cost": 90,  "requires": ["bronze_working", "writing"]},
+	"construction":     {"name": "Construction",     "tier": 3, "cost": 90,  "requires": ["masonry"]},
+	"philosophy":       {"name": "Philosophy",       "tier": 4, "cost": 140, "requires": ["currency", "mathematics"]},
+	"education":        {"name": "Education",        "tier": 5, "cost": 200, "requires": ["philosophy"]}
+}

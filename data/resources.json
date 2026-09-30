@@ -1,0 +1,32 @@
+{
+	"wheat": {
+		"name": "Wheat", "category": "bonus", "icon": "resource_wheat",
+		"yields": {"food": 1},
+		"terrains": ["grassland", "plains"], "elevations": ["flat"], "no_feature": true, "weight": 3
+	},
+	"stone": {
+		"name": "Stone", "category": "bonus", "icon": "resource_planks",
+		"yields": {"production": 1},
+		"terrains": ["grassland", "plains", "desert", "tundra"], "elevations": ["flat", "hills"], "no_feature": true, "weight": 2
+	},
+	"horses": {
+		"name": "Horses", "category": "strategic", "icon": "chess_knight", "reveal_tech": "animal_husbandry",
+		"yields": {"production": 1},
+		"terrains": ["grassland", "plains", "tundra"], "elevations": ["flat"], "no_feature": true, "weight": 2
+	},
+	"iron": {
+		"name": "Iron", "category": "strategic", "icon": "resource_iron", "reveal_tech": "bronze_working",
+		"yields": {"production": 1},
+		"terrains": ["grassland", "plains", "desert", "tundra"], "elevations": ["hills"], "weight": 2
+	},
+	"gold": {
+		"name": "Gold", "category": "luxury", "icon": "tokens",
+		"yields": {"gold": 2},
+		"terrains": ["grassland", "plains", "desert"], "elevations": ["flat", "hills"], "weight": 1
+	},
+	"gems": {
+		"name": "Gems", "category": "luxury", "icon": "suit_diamonds",
+		"yields": {"gold": 3},
+		"terrains": ["grassland", "desert", "tundra"], "elevations": ["hills"], "weight": 1
+	}
+}
