@@ -1,0 +1,31 @@
+name: Content idea
+description: A new unit, building, tech, resource or civilization
+labels: ["content"]
+body:
+  - type: markdown
+    attributes:
+      value: Most content is data-only: add an entry to `data/*.json` and the build list, tech tree and AI pick it up. See "Extending" in the README.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options:
+        - Unit
+        - Building
+        - Technology
+        - Resource or terrain
+        - Civilization
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: The idea
+      description: Name, role, rough numbers (cost, strength, yields) and which tech unlocks it.
+    validations:
+      required: true
+  - type: textarea
+    id: needs
+    attributes:
+      label: Does it need code or art?
+      description: A new ability or yield needs a rules change; a unit needs an icon or sprite.

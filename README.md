@@ -228,7 +228,18 @@ improvements, roads and rivers, happiness, diplomacy and trade, religion, great 
 control, a multi-item build queue, choosing your civilization, and multiplayer. The AI sees
 through fog of war.
 
+## Roadmap and contributing
+
+Planned work is tracked in the [milestones](https://github.com/Skigim/Hexfare/milestones) and
+[issues](https://github.com/Skigim/Hexfare/issues). See [CONTRIBUTING.md](CONTRIBUTING.md) for the
+workflow and labels.
+
+## License
+
+The code and Blender scripts are [MIT](LICENSE). The bundled third-party art is CC0 (below).
+
 ## Credits
 
-Art and fonts by [Kenney](https://kenney.nl), CC0 (see `assets/LICENSE-kenney.txt`). Built with
-[Godot Engine](https://godotengine.org).
+Art and fonts by [Kenney](https://kenney.nl), CC0 (see `assets/LICENSE-kenney.txt`). Character
+animations and weapon pieces by [Kay Lousberg (KayKit)](https://www.kaylousberg.com), CC0 (the
+`License.txt` files in `assets/KayKit_*`). Built with [Godot Engine](https://godotengine.org).

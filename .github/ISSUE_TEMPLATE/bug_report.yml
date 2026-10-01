@@ -1,0 +1,33 @@
+name: Bug report
+description: Something behaves differently from the rules or crashes
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what actually happened.
+    validations:
+      required: true
+  - type: input
+    id: seed
+    attributes:
+      label: Seed and settings
+      description: Games are deterministic, so a seed plus map size and player count lets us replay it.
+      placeholder: "--seed=5 --size=small --players=2"
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: "v0.1.0 or a commit hash"
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Turn number and the actions that lead to it. A save file or screenshot helps.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Output or errors
+      description: Anything printed in the Godot console.
+      render: text

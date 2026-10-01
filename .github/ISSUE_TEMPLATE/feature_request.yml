@@ -1,0 +1,30 @@
+name: Feature request
+description: A new mechanic, UI change or engine capability
+labels: ["feature"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or goal
+      description: What is missing or awkward today?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Proposed approach
+      description: Rough idea. If it needs a new player action, it goes through `Game`; the AI should learn to use it too.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Rules
+        - AI
+        - UI / HUD
+        - Map view
+        - Art
+        - Data / balance
+        - Tests / tooling
+    validations:
+      required: true

@@ -1,0 +1,14 @@
+changelog:
+  categories:
+    - title: Features
+      labels: [feature]
+    - title: Fixes
+      labels: [bug]
+    - title: Content and balance
+      labels: [content, balance]
+    - title: Art
+      labels: [area:art]
+    - title: Internal
+      labels: [infra, tech-debt, docs]
+    - title: Other changes
+      labels: ["*"]

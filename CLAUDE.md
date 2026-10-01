@@ -40,6 +40,14 @@ Godot 4.7 is installed via WinGet (not on PATH):
   the AI picks them up automatically.
 - New test suites must be added to `SUITES` in `tests/run_tests.gd`.
 
+## GitHub workflow
+
+Repo: `Skigim/Hexfare` (default branch `main`). See CONTRIBUTING.md.
+- Work is tracked as issues under SemVer milestones (`v0.2.0`, ...). Each issue has one type label
+  (`bug`, `feature`, `content`, `balance`, `tech-debt`, `docs`, `infra`) and an `area:*` label.
+- Put `Closes #n` in the PR body. PRs are squash-merged; branches are `feat/`, `fix/`, `content/`, `art/`.
+- Closing a milestone = tag `vMAJOR.MINOR.PATCH` + a GitHub Release.
+
 ## GDScript pitfalls seen in this project
 
 - `:=` cannot infer a type from a Variant (dictionary values, untyped array elements, `Array`
