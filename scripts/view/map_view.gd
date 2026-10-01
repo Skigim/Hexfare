@@ -39,6 +39,7 @@ func setup(g: Game, viewing_player: Player) -> void:
 	banner_layer = Node2D.new()
 	path = PathLayer.new()
 	effects = Node2D.new()
+	unit_layer.y_sort_enabled = true   # figures lower on screen stand in front
 	for layer in [terrain, borders, overlays, highlights, city_layer, unit_layer, fog, banner_layer, path, effects]:
 		add_child(layer)
 	for layer in [borders, fog]:
@@ -119,7 +120,7 @@ func _sync_cities(s: GameState) -> void:
 func _sync_units(s: GameState) -> void:
 	for uid in _unit_views.keys():
 		if not s.units.has(uid):
-			_unit_views[uid].queue_free()
+			_unit_views[uid].remove(animate)
 			_unit_views.erase(uid)
 	for u in s.units.values():
 		var v: UnitView = _unit_views.get(u.id)
@@ -144,8 +145,8 @@ func unit_position(u: Unit) -> Vector2:
 	var in_city := s.city_at(u.coord) != null
 	var shared := s.units_at(u.coord).size() > 1
 	if u.is_military():
-		if in_city:
-			return base + Vector2(-20, 26)
+		if in_city:   # figures stand lower so their heads clear the city banner
+			return base + (Vector2(-22, 40) if UnitSprite.has_sheet(u.type) else Vector2(-20, 26))
 		return base + (Vector2(-14, -8) if shared else Vector2.ZERO)
 	if in_city:
 		return base + Vector2(24, 28)
@@ -167,7 +168,16 @@ func _on_unit_moved(u: Unit, traveled: Array) -> void:
 		pts.append(Hex.to_pixel(traveled[i]))
 	pts[pts.size() - 1] = unit_position(u)
 	v.coord = u.coord
-	v.animate_path(pts)
+	v.animate_path(pts, 0.09, UnitView.DEATH_TIME if _body_at(u.coord, v) else 0.0)
+
+
+## True if a unit killed in this fight is lying on the hex (its view is removed only after the
+## move is announced, so it is still in _unit_views, marked dying).
+func _body_at(c: Vector2i, mover: UnitView) -> bool:
+	for other in _unit_views.values():
+		if other != mover and other.dying and other.coord == c:
+			return true
+	return false
 
 
 func _on_combat(info: Dictionary) -> void:
@@ -183,6 +193,15 @@ func _on_combat(info: Dictionary) -> void:
 		var v: UnitView = _unit_views.get(info.attacker_unit_id)
 		if v != null:
 			v.lunge(to_pos)
+	if info.get("defender_kind", "") == "unit":
+		var d: UnitView = _unit_views.get(info.defender_unit_id)
+		if d != null:
+			d.dying = int(info.defender_hp) <= 0
+			d.struck(from_pos)
+	if info.has("attacker_unit_id") and int(info.get("attacker_hp", 1)) <= 0:
+		var a: UnitView = _unit_views.get(info.attacker_unit_id)
+		if a != null:
+			a.dying = true
 	float_text(to_pos + Vector2(0, -30), "-%d" % info.to_defender, UITheme.BAD)
 	if int(info.get("to_attacker", 0)) > 0:
 		float_text(from_pos + Vector2(0, -30), "-%d" % info.to_attacker, Color("#ffb35e"))

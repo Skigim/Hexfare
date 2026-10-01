@@ -1,0 +1,50 @@
+{
+ "sheet": "warrior.png",
+ "mask": "warrior_mask.png",
+ "cell": [
+  128,
+  160
+ ],
+ "columns": 16,
+ "fps": 12,
+ "anchor": [
+  64.0,
+  124.8
+ ],
+ "directions": [
+  "e",
+  "ne",
+  "nw",
+  "w",
+  "sw",
+  "se"
+ ],
+ "animations": {
+  "idle": {
+   "first": 0,
+   "frames": 12,
+   "loop": true
+  },
+  "walk": {
+   "first": 72,
+   "frames": 8,
+   "loop": true
+  },
+  "attack": {
+   "first": 120,
+   "frames": 9,
+   "loop": false
+  },
+  "hit": {
+   "first": 174,
+   "frames": 5,
+   "loop": false
+  },
+  "death": {
+   "first": 204,
+   "frames": 8,
+   "loop": false
+  }
+ },
+ "note": "Cell index = first + direction * frames + frame. Directions follow Hex.DIRECTIONS."
+}

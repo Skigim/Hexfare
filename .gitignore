@@ -5,3 +5,6 @@
 
 # Local test/screenshot output
 /tmp/
+
+# Blender backups
+*.blend1

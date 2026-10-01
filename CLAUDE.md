@@ -15,6 +15,9 @@ Godot 4.7 is installed via WinGet (not on PATH):
 - Screenshot for visual checks: `.\tools\screenshot.ps1 -Out <png> -GameArgs "--seed=5","--autoplay=40","--select=city"`.
   Flags are documented at the top of `scripts/view/game_scene.gd` and in README.md. Look at the
   PNG after UI changes; screenshot mode ignores the real mouse cursor.
+- Rebuild the sprite-sheet warrior (Blender 5.1 at `E:\Blender\blender.exe`):
+  `E:\Blender\blender.exe -b --factory-startup --python art/warrior/build_warrior.py`, then `--import`.
+  Preview: `<godot> --path . res://scenes/sprite_preview.tscn`. `art/` is hidden from Godot (`.gdignore`).
 - Run the game: `<godot> --path .` (main menu) or `<godot> --path . res://scenes/game.tscn -- --seed=5`.
 
 ## Architecture rules

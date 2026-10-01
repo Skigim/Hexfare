@@ -1,0 +1,25 @@
+[remap]
+
+importer="wavefront_obj"
+importer_version=1
+type="Mesh"
+uid="uid://bjcuft3yqsqk1"
+path="res://.godot/imported/fistweapon_A_stacked.obj-690a3f2eed3b9b32e3b12a3459deff9c.mesh"
+
+[deps]
+
+files=["res://.godot/imported/fistweapon_A_stacked.obj-690a3f2eed3b9b32e3b12a3459deff9c.mesh"]
+
+source_file="res://assets/KayKit_FantasyWeaponsBits_1.0_FREE/Assets/obj/fistweapon_A_stacked.obj"
+dest_files=["res://.godot/imported/fistweapon_A_stacked.obj-690a3f2eed3b9b32e3b12a3459deff9c.mesh", "res://.godot/imported/fistweapon_A_stacked.obj-690a3f2eed3b9b32e3b12a3459deff9c.mesh"]
+
+[params]
+
+generate_tangents=true
+generate_lods=true
+generate_shadow_mesh=true
+generate_lightmap_uv2=false
+generate_lightmap_uv2_texel_size=0.2
+scale_mesh=Vector3(1, 1, 1)
+offset_mesh=Vector3(0, 0, 0)
+force_disable_mesh_compression=false
