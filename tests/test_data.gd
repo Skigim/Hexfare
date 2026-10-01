@@ -89,7 +89,9 @@ func test_unit_sprite_sheets() -> void:
 		var mask: Texture2D = (s.material as ShaderMaterial).get_shader_parameter("mask_tex")
 		assert_eq(mask.get_size(), sheet.get_size(), "%s mask matches its sheet" % id)
 		var bounds := Rect2(Vector2.ZERO, sheet.get_size())
-		for role in UnitSprite.ROLES:
+		# Units that fight need every role; civilians (captured, never killed) just stand and walk.
+		var roles: Array = UnitSprite.BASIC_ROLES if Defs.units[id].get("class", "") == "civilian" else UnitSprite.ROLES
+		for role in roles:
 			for dir in s._directions:
 				var anim := "%s_%s" % [role, dir]
 				assert_true(s.sprite_frames.has_animation(anim), "%s %s" % [id, anim])
@@ -103,14 +105,36 @@ func test_unit_sprite_sheets() -> void:
 func test_unit_views_use_sprite_sheets() -> void:
 	var game := make_flat_game()
 	var views: Array[UnitView] = []
-	for type in ["warrior", "settler"]:
+	for type in ["warrior", "settler", "archer"]:
 		var v := UnitView.new()
 		v.sync_from(spawn(game, type, 0, 2 + views.size() * 2, 2), Color.BLUE, true)
 		views.append(v)
 	assert_true(views[0].sprite != null, "a warrior is drawn as a figure")
-	assert_true(views[1].sprite == null, "a settler keeps its token")
+	assert_true(views[1].sprite != null, "a settler is drawn as a figure")
+	assert_true(views[2].sprite == null, "an archer keeps its token")
+	assert_true(views[1].base_radii().x > views[0].base_radii().x, "the settler pair stands on a wider base")
+	views[1].sprite.act("attack")
+	assert_eq(views[1].sprite.role, "idle", "a role the sheet lacks plays idle")
+	var strike := views[1].founding_time()
+	assert_true(strike > 0.0 and strike < views[1].sprite.role_time("build"), "the settler's last blow lands inside its build")
+	assert_eq(views[0].founding_time(), 0.0, "a warrior has no build")
 	for v in views:
 		v.free()
+
+
+## While a settler is still building a city, the map leaves its territory unclaimed.
+func test_borders_wait_for_a_city_being_built() -> void:
+	var game := make_flat_game()
+	var u := spawn(game, "settler", 0, 4, 3)
+	assert_true(game.found_city(u.id), "city founded")
+	var city: City = game.state.cities.values()[0]
+	var layer := BorderLayer.new()
+	layer.state = game.state
+	var tile := game.state.tile(city.coord)
+	assert_true(layer._claimed(tile), "a shown city's tile has a border")
+	layer.hidden_cities[city.id] = true
+	assert_true(not layer._claimed(tile), "a city still being built has none yet")
+	layer.free()
 
 
 func test_every_tech_reachable() -> void:

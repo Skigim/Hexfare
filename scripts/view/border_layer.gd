@@ -5,6 +5,7 @@ extends Node2D
 var state: GameState
 var viewer: Player
 var reveal_all := false
+var hidden_cities: Dictionary = {}   # city id -> true: its tiles draw as unclaimed (city not shown yet)
 
 
 func _draw() -> void:
@@ -14,7 +15,7 @@ func _draw() -> void:
 	var full := Hex.corners(Vector2.ZERO, 1.0)
 	for i in state.map.size():
 		var t := state.map.tiles[i]
-		if t.owner < 0 or not _seen(i):
+		if not _claimed(t) or not _seen(i):
 			continue
 		var color := state.players[t.owner].color
 		var center := Hex.to_pixel(t.coord)
@@ -24,13 +25,17 @@ func _draw() -> void:
 		draw_colored_polygon(fill, Color(color, 0.13))
 		for dir in 6:
 			var n := state.map.get_tile(t.coord + Hex.DIRECTIONS[dir])
-			if n != null and n.owner == t.owner:
+			if n != null and n.owner == t.owner and _claimed(n):
 				continue
 			var e := Hex.edge_corners(dir)
 			var a := inset[e.x] + center
 			var b := inset[e.y] + center
 			draw_line(a, b, Color(0, 0, 0, 0.35), 7.0, true)
 			draw_line(a, b, color.lightened(0.15), 4.0, true)
+
+
+func _claimed(t: Tile) -> bool:
+	return t.owner >= 0 and not hidden_cities.has(t.city_id)
 
 
 func _seen(i: int) -> bool:

@@ -185,10 +185,20 @@ panel, teach `AIPlayer` to use it, and add a test.
   `E:\Blender\blender.exe -b --factory-startup --python art/warrior/build_warrior.py` (~1 min) models,
   rigs and animates the warrior, saves `art/warrior/warrior.blend` for hand tweaks, and renders
   idle/walk/attack/hit/death in six facings that point at the hex neighbours into
-  `assets/units/warrior/` (sheet, team-colour mask, layout JSON). `-- --only=walk` renders just some
-  animations into a temp folder for a quick look. `UnitSprite` (`scripts/view/unit_sprite.gd`) plays
+  `assets/units/warrior/` (sheet, team-colour mask, layout JSON). `-- --only=walk` / `--dirs=se`
+  render just some animations or facings into a temp folder for a quick look; `--out=<dir>` writes
+  the full sheets elsewhere. Unit scripts are short because the parts are shared, in `art/lib/`:
+  `spritekit.py` (materials, meshes, rigs, posing, ropes, camera, rendering, sheets), `humanoid.py`
+  (base body dressed from an outfit table, standing, breathing, walk cycle), `gear.py` (helmet,
+  sword, shield, hat, cloak, staff...) and `quadruped.py` (a four-legged body sized from a proportions
+  table, with a donkey preset, pack saddle and idle). `art/settler/build_settler.py` builds the settler, an adventurer
+  leading a pack donkey (two actors in one rig, joined by a rope), with idle, walk and build (it
+  hammers the ground with a mallet when founding a city; the city appears on the last blow, timed by
+  the sheet's `"marks"`). Settlers never fight, so they have no attack, hit or death; a role a sheet
+  lacks plays idle. Poses can show and hide parts (`sk.toggle`: the mallet moves from belt to hand). A sheet's JSON can size the stand drawn under
+  the unit (`"base"`). `UnitSprite` (`scripts/view/unit_sprite.gd`) plays
   a sheet with the owner's colour; `res://scenes/sprite_preview.tscn` shows all six facings on hex
-  tiles (`--anim=walk`, `--zoom=2`, `--screenshot=out.png`). On the map, any unit with a sheet is drawn as
+  tiles (`--unit=settler`, `--anim=walk`, `--zoom=2`, `--screenshot=out.png`). On the map, any unit with a sheet is drawn as
   a figure on a civ-coloured base (it walks, faces its moves, attacks, flinches and dies); the rest keep
   their tokens. Sheets are VRAM-compressed (BC7 colour, BC4 mask), which the build sets up.
 

@@ -1,0 +1,47 @@
+{
+ "sheet": "settler.png",
+ "mask": "settler_mask.png",
+ "cell": [
+  160,
+  192
+ ],
+ "columns": 16,
+ "fps": 12,
+ "anchor": [
+  80.0,
+  134.4
+ ],
+ "directions": [
+  "e",
+  "ne",
+  "nw",
+  "w",
+  "sw",
+  "se"
+ ],
+ "animations": {
+  "idle": {
+   "first": 0,
+   "frames": 16,
+   "loop": true
+  },
+  "walk": {
+   "first": 96,
+   "frames": 8,
+   "loop": true
+  },
+  "build": {
+   "first": 144,
+   "frames": 24,
+   "loop": false,
+   "marks": {
+    "strike": 17
+   }
+  }
+ },
+ "base": [
+  46,
+  17
+ ],
+ "note": "Cell index = first + direction * frames + frame. Directions follow Hex.DIRECTIONS."
+}

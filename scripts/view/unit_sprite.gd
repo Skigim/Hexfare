@@ -8,6 +8,8 @@ extends AnimatedSprite2D
 
 const ROOT := "res://assets/units/%s/%s"
 const ROLES := ["idle", "walk", "attack", "hit", "death"]
+const EXTRA_ROLES := ["build"]          # optional: a settler founding a city
+const BASIC_ROLES := ["idle", "walk"]   # every sheet has these; units that never fight need no more
 const SHADER := preload("res://scripts/view/team_sprite.gdshader")
 
 static var _sheets: Dictionary = {}   # id -> {frames: SpriteFrames, mask: Texture2D, meta: Dictionary}
@@ -15,6 +17,7 @@ static var _sheets: Dictionary = {}   # id -> {frames: SpriteFrames, mask: Textu
 var unit_type := ""
 var direction := 5           # index into Hex.DIRECTIONS; 5 (south-east) faces the viewer
 var role := "idle"
+var base_size := Vector2.ZERO   # the stand under the figure, in sheet pixels (from the sheet; zero = default)
 var _directions: Array = []
 
 
@@ -36,6 +39,8 @@ static func create(id: String, team_color: Color, with_shadow: bool = true) -> U
 	s.sprite_frames = sheet.frames
 	s._directions = sheet.meta.directions
 	var meta: Dictionary = sheet.meta
+	if meta.has("base"):
+		s.base_size = Vector2(meta.base[0], meta.base[1])
 	s.centered = true
 	s.offset = Vector2(meta.cell[0] * 0.5 - meta.anchor[0], meta.cell[1] * 0.5 - meta.anchor[1])
 	var mat := ShaderMaterial.new()
@@ -64,14 +69,33 @@ func face(dir: int) -> void:
 	_play_keeping_frame()
 
 
-## Plays a role ("idle", "walk", "attack", "hit", "death"). Attack and hit fall back to idle;
-## death holds its last frame.
+## Plays a role ("idle", "walk", "attack", "hit", "death", "build"). Attack and hit fall back to
+## idle; death and build hold their last frame. A role the sheet doesn't have plays idle.
 func act(new_role: String) -> void:
-	role = new_role
+	role = new_role if has_role(new_role) else "idle"
 	play(_name())
 	(material as ShaderMaterial).set_shader_parameter("flash", 0.6 if role == "hit" else 0.0)
 	if role == "hit":
 		create_tween().tween_method(func(v: float) -> void: (material as ShaderMaterial).set_shader_parameter("flash", v), 0.6, 0.0, 0.25)
+
+
+func has_role(r: String) -> bool:
+	return sprite_frames.has_animation("%s_%s" % [r, _directions[0]])
+
+
+## Seconds a role takes to play once.
+func role_time(r: String) -> float:
+	var info: Dictionary = _sheet(unit_type).meta.animations.get(r, {})
+	return float(info.get("frames", 0)) / float(_sheet(unit_type).meta.fps)
+
+
+## Seconds into a role at a frame the sheet names (e.g. build's "strike"), or -1 if it has none.
+func mark_time(r: String, mark: String) -> float:
+	var info: Dictionary = _sheet(unit_type).meta.animations.get(r, {})
+	var marks: Dictionary = info.get("marks", {})
+	if not marks.has(mark):
+		return -1.0
+	return float(marks[mark]) / float(_sheet(unit_type).meta.fps)
 
 
 func set_team_color(c: Color) -> void:

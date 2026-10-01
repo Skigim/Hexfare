@@ -8,3 +8,6 @@
 
 # Blender backups
 *.blend1
+
+# Python bytecode (Blender scripts in art/)
+__pycache__/

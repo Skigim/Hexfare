@@ -24,6 +24,7 @@ var _city_views: Dictionary = {}    # city id -> CityView
 var _banners: Dictionary = {}       # city id -> CityBanner
 var _banner_scale := 1.0
 var _unit_scale := 1.0
+var _reveal_delay: Dictionary = {}  # city id -> seconds before a just-founded city appears
 
 
 func setup(g: Game, viewing_player: Player) -> void:
@@ -50,7 +51,7 @@ func setup(g: Game, viewing_player: Player) -> void:
 	terrain.build(game.state.map)
 	game.unit_moved.connect(_on_unit_moved)
 	game.combat_resolved.connect(_on_combat)
-	game.city_founded.connect(func(city): terrain.refresh_tile(game.state.tile(city.coord)))
+	game.city_founded.connect(_on_city_founded)
 	sync()
 
 
@@ -110,6 +111,9 @@ func _sync_cities(s: GameState) -> void:
 			b.scale = Vector2.ONE * _banner_scale
 			banner_layer.add_child(b)
 			_banners[city.id] = b
+			if _reveal_delay.has(city.id):   # the settler is still building it
+				_fade_in([v, b], _reveal_delay[city.id])
+				_reveal_delay.erase(city.id)
 		var explored := is_explored_by_viewer(city.coord)
 		_city_views[city.id].visible = explored
 		_banners[city.id].visible = explored
@@ -144,13 +148,15 @@ func unit_position(u: Unit) -> Vector2:
 	var base := Hex.to_pixel(u.coord)
 	var in_city := s.city_at(u.coord) != null
 	var shared := s.units_at(u.coord).size() > 1
+	var figure := UnitSprite.has_sheet(u.type)
 	if u.is_military():
 		if in_city:   # figures stand lower so their heads clear the city banner
-			return base + (Vector2(-22, 40) if UnitSprite.has_sheet(u.type) else Vector2(-20, 26))
-		return base + (Vector2(-14, -8) if shared else Vector2.ZERO)
+			return base + (Vector2(-22, 40) if figure else Vector2(-20, 26))
+		return base + (Vector2(-20, -12) if figure and shared else Vector2(-14, -8) if shared else Vector2.ZERO)
 	if in_city:
-		return base + Vector2(24, 28)
-	return base + (Vector2(20, 18) if shared else Vector2.ZERO)
+		return base + (Vector2(22, 40) if figure else Vector2(24, 28))
+	# Figures on a shared hex step far enough apart that their stands don't overlap.
+	return base + (Vector2(18, 16) if figure and shared else Vector2(20, 18) if shared else Vector2.ZERO)
 
 
 func unit_view(uid: int) -> UnitView:
@@ -178,6 +184,36 @@ func _body_at(c: Vector2i, mover: UnitView) -> bool:
 		if other != mover and other.dying and other.coord == c:
 			return true
 	return false
+
+
+## A settler figure founding a city hammers the ground first; the city, its borders and the
+## cleared tile appear on its last blow.
+func _on_city_founded(city: City) -> void:
+	var delay := 0.0
+	if animate and is_visible_to_viewer(city.coord):
+		for v in _unit_views.values():
+			if v.coord == city.coord and not game.state.units.has(v.unit_id) and v.founding_time() > 0.0:
+				v.founding = true
+				delay = v.founding_time()
+				break
+	if delay <= 0.0:
+		terrain.refresh_tile(game.state.tile(city.coord))
+		return
+	_reveal_delay[city.id] = delay
+	borders.hidden_cities[city.id] = true
+	var tile := game.state.tile(city.coord)
+	get_tree().create_timer(delay).timeout.connect(func():
+		terrain.refresh_tile(tile)
+		borders.hidden_cities.erase(city.id)
+		borders.queue_redraw())
+
+
+func _fade_in(nodes: Array, delay: float) -> void:
+	for n in nodes:
+		n.modulate.a = 0.0
+		var t: Tween = n.create_tween()
+		t.tween_interval(delay)
+		t.tween_property(n, "modulate:a", 1.0, 0.35)
 
 
 func _on_combat(info: Dictionary) -> void:

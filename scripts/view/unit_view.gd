@@ -13,7 +13,7 @@ const BODY_TIME := 1.8           # a fallen figure lies this long before fading
 const FADE_TIME := 0.6
 ## From the killing blow until the body is gone; a unit moving onto that hex waits this long.
 const DEATH_TIME := STRIKE_DELAY + BODY_TIME + FADE_TIME
-const BASE_RX := 24.0
+const BASE_RX := 24.0           # default stand; a sheet can ask for its own size ("base")
 const BASE_RY := 10.0
 
 var unit_id: int = -1
@@ -26,6 +26,7 @@ var exhausted := false
 var status := ""        # "", "fortified", "sleeping", "moving"
 var sprite: UnitSprite
 var dying := false      # killed in combat: play the death when the unit leaves the game
+var founding := false   # founded a city: play "build" when the unit leaves the game
 var _tween: Tween
 var _badges: _Badges
 
@@ -103,9 +104,25 @@ func _flinch() -> void:
 		sprite.act("hit")
 
 
-## The unit has left the game. A figure killed in combat plays its death, fades and frees
-## itself; anything else is freed at once.
+## Seconds from founding a city until the build reaches its last blow (when the city appears);
+## 0 if this unit has no build to play.
+func founding_time() -> float:
+	if sprite == null or not sprite.has_role("build"):
+		return 0.0
+	return maxf(sprite.mark_time("build", "strike"), 0.0)
+
+
+## The unit has left the game. A figure killed in combat plays its death, and a settler that
+## founded a city its build; then it fades and frees itself. Anything else is freed at once.
 func remove(animated: bool) -> void:
+	if animated and founding and founding_time() > 0.0:
+		_badges.hide()
+		var t := create_tween()
+		t.tween_callback(sprite.act.bind("build"))
+		t.tween_interval(sprite.role_time("build") + 0.3)
+		t.tween_property(self, "modulate:a", 0.0, FADE_TIME)
+		t.tween_callback(queue_free)
+		return
 	if sprite == null or not dying or not animated:
 		queue_free()
 		return
@@ -153,9 +170,17 @@ func _draw() -> void:
 
 ## The figure's stand: a civ-coloured oval with a white rim (grey once it has no moves left).
 func _draw_base() -> void:
-	draw_colored_polygon(_ellipse(BASE_RX + 3, BASE_RY + 2, Vector2(2, 3)), Color(0, 0, 0, 0.35))
-	draw_colored_polygon(_ellipse(BASE_RX + 3, BASE_RY + 2), _ring_color())
-	draw_colored_polygon(_ellipse(BASE_RX, BASE_RY), color.darkened(0.1))
+	var r := base_radii()
+	draw_colored_polygon(_ellipse(r.x + 3, r.y + 2, Vector2(2, 3)), Color(0, 0, 0, 0.35))
+	draw_colored_polygon(_ellipse(r.x + 3, r.y + 2), _ring_color())
+	draw_colored_polygon(_ellipse(r.x, r.y), color.darkened(0.1))
+
+
+## The stand's radii in this view's space.
+func base_radii() -> Vector2:
+	if sprite == null or sprite.base_size == Vector2.ZERO:
+		return Vector2(BASE_RX, BASE_RY)
+	return sprite.base_size * SPRITE_SCALE
 
 
 ## Health bar under the unit and a status pip at its top right, on `canvas`.
@@ -199,4 +224,5 @@ static func _offset(pts: PackedVector2Array, by: Vector2) -> PackedVector2Array:
 ## Draws the badges above the figure (children draw over their parent's own drawing).
 class _Badges extends Node2D:
 	func _draw() -> void:
-		(get_parent() as UnitView).draw_badges(self, -62.0, UnitView.BASE_RY)
+		var v := get_parent() as UnitView
+		v.draw_badges(self, -62.0, v.base_radii().y)
