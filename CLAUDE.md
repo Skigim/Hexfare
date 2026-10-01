@@ -19,8 +19,9 @@ Godot 4.7 is installed via WinGet (not on PATH):
   `E:\Blender\blender.exe -b --factory-startup --python art/warrior/build_warrior.py`, then `--import`.
   Preview: `<godot> --path . res://scenes/sprite_preview.tscn`. `art/` is hidden from Godot (`.gdignore`).
   Shared modelling/animation code is in `art/lib/` (spritekit, humanoid, gear, quadruped); build new
-  units from it. After changing it, check the warrior still matches: `... build_warrior.py -- --out=<tmp>`
-  and compare with `assets/units/warrior/`.
+  units from it. After changing it, check the warrior and settler still match: `... build_warrior.py -- --out=<tmp>`
+  and compare with `assets/units/warrior/`. **Before making or changing a unit sprite, read
+  `docs/DESIGN.md`** (art direction, conventions, the sheet contract and a step-by-step recipe).
 - Run the game: `<godot> --path .` (main menu) or `<godot> --path . res://scenes/game.tscn -- --seed=5`.
 
 ## Architecture rules
