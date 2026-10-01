@@ -22,6 +22,9 @@ Godot 4.7 is installed via WinGet (not on PATH):
   units from it. After changing it, check the warrior and settler still match: `... build_warrior.py -- --out=<tmp>`
   and compare with `assets/units/warrior/`. **Before making or changing a unit sprite, read
   `docs/DESIGN.md`** (art direction, conventions, the sheet contract and a step-by-step recipe).
+- Rebuild the water tiles: `E:\Blender\blender.exe -b --factory-startup --python art/tiles/build_water.py`,
+  then `--import`. The other terrain tiles are still Kenney's. Tiles share `art/lib/tilekit.py`; add a
+  terrain as another `art/tiles/build_<terrain>.py` and list its names in `data/terrain.json`.
 - Run the game: `<godot> --path .` (main menu) or `<godot> --path . res://scenes/game.tscn -- --seed=5`.
 
 ## Architecture rules

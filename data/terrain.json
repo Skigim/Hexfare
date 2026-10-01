@@ -59,16 +59,14 @@
 			"yields": {"food": 1, "gold": 1},
 			"move_cost": 1,
 			"water": true,
-			"tint": "#8fd0ee",
-			"art": {"flat": ["stone_07"]}
+			"art": {"flat": ["water_coast_0", "water_coast_1", "water_coast_2", "water_coast_3"]}
 		},
 		"ocean": {
 			"name": "Ocean",
 			"yields": {"food": 1},
 			"move_cost": 1,
 			"water": true,
-			"tint": "#4d84cf",
-			"art": {"flat": ["stone_07"]}
+			"art": {"flat": ["water_ocean_0", "water_ocean_1", "water_ocean_2", "water_ocean_3"]}
 		}
 	},
 	"elevations": {

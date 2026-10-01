@@ -150,7 +150,12 @@ border curves, city defense, healing, unit upkeep, combat constants, the purchas
 which victories are enabled.
 
 **Art**: icons are `assets/icons/<name>.png`. To pull more art from the Kenney pack, add the file
-names to the manifest in `tools/import_kenney_assets.ps1` and run it.
+names to the manifest in `tools/import_kenney_assets.ps1` and run it. Water is the exception: it is
+rendered in Blender by `E:\Blender\blender.exe -b --factory-startup --python art/tiles/build_water.py`
+(~10 s) into `assets/terrain/water_<kind>_<n>.png`. `art/lib/tilekit.py` is the shared tile kit
+(hex silhouette, top-down camera, flat shapes, PNG output), so another terrain is a short script
+beside `build_water.py`. `-- --frames=N` renders an N-frame loop per tile as a strip plus a
+`{"frames", "fps"}` json, for animating later; the game draws still tiles only for now.
 
 **Code-level features** (a new unit ability, a new yield, a new victory type) follow the same
 path: add the rule as a `Game` action or a rules-module function, expose it in the relevant HUD
