@@ -56,7 +56,9 @@ static func turns_for(unit: Unit, g: int) -> int:
 ## Explores from the unit. Returns {"g": {coord: cost}, "came": {coord: prev}}.
 ## Stops early at `target` if given (not Hex.NONE). Tiles with g > max_g are not expanded.
 ## `attack_target` allows the final step onto an enemy-held tile (for move-and-attack).
-static func search(state: GameState, unit: Unit, target: Vector2i = Hex.NONE, max_g: int = INF, attack_target := false) -> Dictionary:
+## `blocked` is an optional set of extra impassable tiles ({coord: true}), used to route around
+## stationary friendly units.
+static func search(state: GameState, unit: Unit, target: Vector2i = Hex.NONE, max_g: int = INF, attack_target := false, blocked: Dictionary = {}) -> Dictionary:
 	var mp := unit.max_moves()
 	var g0 := start_g(unit)
 	var g := {unit.coord: g0}
@@ -75,7 +77,7 @@ static func search(state: GameState, unit: Unit, target: Vector2i = Hex.NONE, ma
 		var cur_g: int = g[cur]
 		var moves_now := moves_at(cur_g, mp)
 		for n in Hex.neighbors(cur):
-			if closed.has(n):
+			if closed.has(n) or blocked.has(n):
 				continue
 			var t := state.map.get_tile(n)
 			if t == null:
@@ -97,18 +99,19 @@ static func search(state: GameState, unit: Unit, target: Vector2i = Hex.NONE, ma
 
 
 ## Path (excluding the start) to `target`, or [] if unreachable / not a legal end tile.
-static func find_path(state: GameState, unit: Unit, target: Vector2i) -> Array:
+## `allow_friend_target` accepts a destination held by a friend (who is expected to move away).
+static func find_path(state: GameState, unit: Unit, target: Vector2i, blocked: Dictionary = {}, allow_friend_target := false) -> Array:
 	if target == unit.coord or not state.map.in_bounds(target):
 		return []
-	if blocked_by_friend(state, unit, target):
+	if blocked_by_friend(state, unit, target) and not allow_friend_target:
 		return []
-	var result := search(state, unit, target)
+	var result := search(state, unit, target, INF, false, blocked)
 	return _reconstruct(result.came, unit.coord, target)
 
 
 ## Path to a tile adjacent to `target` (an enemy), ending with `target` itself.
-static func find_attack_path(state: GameState, unit: Unit, target: Vector2i) -> Array:
-	var result := search(state, unit, target, INF, true)
+static func find_attack_path(state: GameState, unit: Unit, target: Vector2i, blocked: Dictionary = {}) -> Array:
+	var result := search(state, unit, target, INF, true, blocked)
 	return _reconstruct(result.came, unit.coord, target)
 
 

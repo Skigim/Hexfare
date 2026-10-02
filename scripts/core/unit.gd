@@ -13,6 +13,7 @@ var sleeping := false
 var skipped := false        # "skip turn" pressed; cleared at turn start
 var acted := false          # moved or attacked this turn (blocks healing next turn)
 var has_attacked := false
+var priority: int = 0       # movement priority: higher acts first when orders resolve
 var has_destination := false
 var destination := Vector2i.ZERO
 var ai: Dictionary = {}     # scratch memory for the AI
@@ -47,6 +48,11 @@ func can_capture_cities() -> bool:
 	return is_military() and not is_ranged()
 
 
+## Melee military units fight any enemy they run into while moving.
+func can_attack_on_contact() -> bool:
+	return is_military() and not is_ranged()
+
+
 func max_moves() -> int:
 	return int(def().get("moves", 2))
 
@@ -69,7 +75,7 @@ func to_dict() -> Dictionary:
 		"id": id, "type": type, "owner": owner, "coord": [coord.x, coord.y], "hp": hp,
 		"moves_left": moves_left, "fortified": fortified, "sleeping": sleeping, "skipped": skipped,
 		"acted": acted, "has_attacked": has_attacked, "has_destination": has_destination,
-		"destination": [destination.x, destination.y], "ai": ai,
+		"destination": [destination.x, destination.y], "ai": ai, "priority": priority,
 	}
 
 
@@ -89,4 +95,5 @@ static func from_dict(d: Dictionary) -> Unit:
 	u.has_destination = d.has_destination
 	u.destination = Vector2i(int(d.destination[0]), int(d.destination[1]))
 	u.ai = Defs.normalize(d.ai)
+	u.priority = int(d.get("priority", 0))
 	return u

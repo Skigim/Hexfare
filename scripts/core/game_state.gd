@@ -2,11 +2,15 @@ class_name GameState
 extends RefCounted
 ## All mutable game data. Pure data + lookup helpers; rules live elsewhere.
 
+## Save format version. 2 added orders, unit priority and game time.
+const VERSION := 2
+
 var map: HexMap
 var players: Array[Player] = []
 var units: Dictionary = {}    # id -> Unit
 var cities: Dictionary = {}   # id -> City
 var turn: int = 1
+var time: int = 0             # game seconds elapsed (advances per resolved turn; economy uses it later)
 var current_player: int = 0
 var next_id: int = 1
 var rng := RandomNumberGenerator.new()
@@ -28,6 +32,11 @@ func player(pid: int) -> Player:
 	if pid < 0 or pid >= players.size():
 		return null
 	return players[pid]
+
+
+## True if players `a` and `b` are hostile. Alliances will plug in here.
+func is_enemy(a: int, b: int) -> bool:
+	return a != b
 
 
 func human_player() -> Player:
@@ -162,14 +171,18 @@ func to_dict() -> Dictionary:
 	for c in cities.values():
 		cs.append(c.to_dict())
 	return {
-		"version": 1, "map": map.to_dict(), "players": ps, "units": us, "cities": cs,
-		"turn": turn, "current_player": current_player, "next_id": next_id,
+		"version": VERSION, "map": map.to_dict(), "players": ps, "units": us, "cities": cs,
+		"turn": turn, "time": time, "current_player": current_player, "next_id": next_id,
 		"rng_seed": str(rng.seed), "rng_state": str(rng.state), "settings": settings,
 		"game_over": game_over, "winner": winner, "victory_type": victory_type,
 	}
 
 
+## Returns null if the save was written by a newer version of the game.
 static func from_dict(d: Dictionary) -> GameState:
+	if int(d.get("version", 1)) > VERSION:
+		push_error("GameState: save version %s is newer than %d" % [str(d.get("version")), VERSION])
+		return null
 	var s := GameState.new()
 	s.map = HexMap.from_dict(d.map)
 	for pd in d.players:
@@ -179,6 +192,7 @@ static func from_dict(d: Dictionary) -> GameState:
 	for cd in d.cities:
 		s.add_city(City.from_dict(cd))
 	s.turn = int(d.turn)
+	s.time = int(d.get("time", 0))
 	s.current_player = int(d.current_player)
 	s.next_id = int(d.next_id)
 	s.rng.seed = String(d.rng_seed).to_int()

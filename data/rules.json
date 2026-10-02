@@ -44,6 +44,7 @@
 	},
 	"units": {
 		"max_hp": 100,
+		"priority_range": 100,
 		"heal_field": 10,
 		"heal_friendly": 15,
 		"heal_city": 25,
@@ -61,6 +62,9 @@
 	},
 	"economy": {
 		"purchase_multiplier": 3
+	},
+	"turn": {
+		"seconds": 3600
 	},
 	"victory": {
 		"domination": true,

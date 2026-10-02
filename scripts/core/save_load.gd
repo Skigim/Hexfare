@@ -32,6 +32,8 @@ static func load_game(path: String = QUICKSAVE) -> Game:
 		return null
 	var game := Game.new()
 	game.state = GameState.from_dict(data.state)
+	if game.state == null:
+		return null
 	for e in data.get("log", []):
 		game.log_entries.append({
 			"turn": int(e.turn), "player": int(e.player), "text": e.text,

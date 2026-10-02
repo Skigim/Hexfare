@@ -102,6 +102,186 @@ func notify(pid: int, text: String, coord: Vector2i = Hex.NONE) -> void:
 	notified.emit(entry)
 
 
+# --- Orders (planning) -----------------------------------------------------
+# Planning never changes the world: these only store intent in Player.orders, and never touch
+# state.rng. Everything that changes the world happens when the turn resolves.
+
+## Validates and stores `order` for player `pid`. Returns {"ok": bool, "reason": String}.
+func issue_order(pid: int, order: Dictionary) -> Dictionary:
+	var reason := validate_order(pid, order)
+	if reason != "":
+		return {"ok": false, "reason": reason}
+	state.player(pid).set_order(order.duplicate(true))
+	changed.emit()
+	return {"ok": true, "reason": ""}
+
+
+## Removes a planned order. Units default to their "act" slot.
+func cancel_order(pid: int, kind: String, id: int, slot: String = Orders.SLOT_ACT) -> bool:
+	var p := state.player(pid)
+	if p == null or p.ready or state.game_over:
+		return false
+	if not p.remove_order(kind, id, slot):
+		return false
+	changed.emit()
+	return true
+
+
+## The orders `viewer` may see for player `pid`: only your own.
+func orders_of(pid: int, viewer: int) -> Array:
+	var p := state.player(pid)
+	if p == null or pid != viewer:
+		return []
+	return p.sorted_orders()
+
+
+## "" if `order` is legal for `pid` right now, otherwise the reason it is not.
+func validate_order(pid: int, order: Dictionary) -> String:
+	var p := state.player(pid)
+	if p == null or not p.alive:
+		return "no such player"
+	if state.game_over:
+		return "the game is over"
+	if p.ready:
+		return "turn already submitted"
+	if not (order.has("kind") and order.has("id") and order.has("slot") and order.has("type")):
+		return "malformed order"
+	match order.kind:
+		Orders.KIND_UNIT:
+			return _validate_unit_order(p, order)
+		Orders.KIND_CITY:
+			return _validate_city_order(p, order)
+	return "unknown actor"
+
+
+func _validate_unit_order(p: Player, order: Dictionary) -> String:
+	var u := state.get_unit(int(order.id))
+	if u == null or u.owner != p.id:
+		return "not your unit"
+	if order.slot != Orders.SLOT_ACT:
+		return "bad slot"
+	match order.type:
+		"move":
+			var to := Orders.coord(order, "to")
+			if not state.map.in_bounds(to):
+				return "off the map"
+			if to == u.coord:
+				return "already there"
+			if plan_path(u, to).is_empty():
+				return "no path"
+		"attack":
+			if not u.is_ranged():
+				return "only ranged units attack by order"
+			var at := Orders.coord(order, "at")
+			var dist := Hex.distance(u.coord, at)
+			if not state.map.in_bounds(at) or dist < 1 or dist > u.attack_range():
+				return "out of range"
+			if Combat.preview(state, u, at).is_empty():
+				return "nothing to attack there"
+		"found_city":
+			if not u.has_ability("found_city"):
+				return "cannot found cities"
+			var at := Orders.coord(order, "at")
+			if not state.map.in_bounds(at):
+				return "off the map"
+			if CityRules.found_blocker(state, u.owner, at) != "":
+				return CityRules.found_blocker(state, u.owner, at)
+			if at != u.coord and plan_path(u, at).is_empty():
+				return "no path"
+		"fortify":
+			if not u.is_military():
+				return "only military units fortify"
+		"sleep", "disband":
+			pass
+		_:
+			return "unknown order"
+	return ""
+
+
+func _validate_city_order(p: Player, order: Dictionary) -> String:
+	var city := state.get_city(int(order.id))
+	if city == null or city.owner != p.id:
+		return "not your city"
+	if order.slot != order.type:
+		return "bad slot"
+	match order.type:
+		"bombard":
+			var at := Orders.coord(order, "at")
+			if not state.map.in_bounds(at) or Hex.distance(city.coord, at) > int(Defs.rules.city.ranged_range):
+				return "out of range"
+			if Combat.preview_city_attack(state, city, at).is_empty():
+				return "nothing to bombard there"
+		"purchase":
+			var kind: String = order.get("item_kind", "")
+			var id: String = order.get("item_id", "")
+			if not can_purchase(city, kind, id, _queued_purchase_cost(p, city.id)):
+				return "cannot buy that"
+		_:
+			return "unknown order"
+	return ""
+
+
+## Gold already committed to other cities' queued purchases.
+func _queued_purchase_cost(p: Player, except_city: int) -> int:
+	var total := 0
+	for o in p.orders:
+		if o.kind == Orders.KIND_CITY and o.type == "purchase" and int(o.id) != except_city:
+			total += CityRules.purchase_cost(o.item_kind, o.item_id)
+	return total
+
+
+## Path for planning `u` to `to` with a full movement budget: routes around stationary friendly
+## units, and may end on an enemy-held tile for melee units (an assault move). [] if impossible.
+func plan_path(u: Unit, to: Vector2i) -> Array:
+	var probe := _plan_probe(u)
+	var blocked := _stationary_friends(u)
+	var enemy_there := state.has_enemy_unit(to, u.owner) and state.military_at(to) != null \
+			or (state.city_at(to) != null and state.city_at(to).owner != u.owner)
+	if enemy_there:
+		if not u.can_attack_on_contact():
+			return []
+		return Pathfinder.find_attack_path(state, probe, to, blocked)
+	var moving_friend := false
+	for other in state.units_at(to):
+		if other != u and other.owner == u.owner and other.is_military() == u.is_military() and _is_moving(other):
+			moving_friend = true
+	return Pathfinder.find_path(state, probe, to, blocked, moving_friend)
+
+
+## A copy of `u` with a full movement budget, so planning does not depend on this turn's budget.
+func _plan_probe(u: Unit) -> Unit:
+	var probe := Unit.new()
+	probe.id = u.id
+	probe.type = u.type
+	probe.owner = u.owner
+	probe.coord = u.coord
+	probe.hp = u.hp
+	probe.moves_left = u.max_moves()
+	probe.fortified = u.fortified
+	return probe
+
+
+## Tiles holding same-kind friendly units that are not moving: planned paths avoid them.
+func _stationary_friends(u: Unit) -> Dictionary:
+	var out := {}
+	for other in state.player_units(u.owner):
+		if other != u and other.is_military() == u.is_military() and not _is_moving(other):
+			out[other.coord] = true
+	return out
+
+
+## True if `u` has a movement order that is not already complete.
+func _is_moving(u: Unit) -> bool:
+	var o := state.player(u.owner).unit_order(u.id)
+	if o.is_empty():
+		return false
+	if o.type == "move":
+		return Orders.coord(o, "to") != u.coord
+	if o.type == "found_city":
+		return Orders.coord(o, "at") != u.coord
+	return false
+
+
 # --- Unit actions ----------------------------------------------------------
 
 func create_unit(unit_type: String, owner: int, coord: Vector2i) -> Unit:
@@ -114,6 +294,8 @@ func create_unit(unit_type: String, owner: int, coord: Vector2i) -> Unit:
 	u.coord = coord
 	u.hp = int(Defs.rules.units.max_hp)
 	u.moves_left = 0
+	u.priority = Orders.mix(state.rng.seed, u.id) % int(Defs.rules.units.priority_range) \
+			+ int(Defs.units[unit_type].get("priority_bonus", 0))
 	state.add_unit(u)
 	unit_created.emit(u)
 	changed.emit()
@@ -487,10 +669,11 @@ func set_production(city_id: int, kind: String, id: String) -> bool:
 	return true
 
 
-func can_purchase(city: City, kind: String, id: String) -> bool:
-	if city.owner != state.current_player or CityRules.build_blocker(state, city, kind, id) != "":
+## `committed` is gold already promised to other queued purchases.
+func can_purchase(city: City, kind: String, id: String, committed: int = 0) -> bool:
+	if CityRules.build_blocker(state, city, kind, id) != "":
 		return false
-	if state.player(city.owner).gold < CityRules.purchase_cost(kind, id):
+	if state.player(city.owner).gold - committed < CityRules.purchase_cost(kind, id):
 		return false
 	if kind == "unit":
 		var pop_cost := int(Defs.units[id].get("pop_cost", 0))
@@ -503,7 +686,7 @@ func can_purchase(city: City, kind: String, id: String) -> bool:
 ## Buys a unit or building immediately with gold.
 func purchase(city_id: int, kind: String, id: String) -> bool:
 	var city := state.get_city(city_id)
-	if city == null or state.game_over or not can_purchase(city, kind, id):
+	if city == null or state.game_over or city.owner != state.current_player or not can_purchase(city, kind, id):
 		return false
 	var player := state.player(city.owner)
 	player.gold -= CityRules.purchase_cost(kind, id)
