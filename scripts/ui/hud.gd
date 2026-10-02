@@ -152,7 +152,7 @@ func refresh(game: Game, human: Player, ctx: Dictionary) -> void:
 		_city_id = -1
 		city_panel.visible = false
 	refresh_hover(game, human, ctx)
-	_refresh_end_turn(game, human, my_turn)
+	_refresh_end_turn(game, human, my_turn, ctx.get("skipped", {}))
 	match ctx.get("targeting", ""):
 		"ranged":
 			_banner.text = "Choose a target (Esc to cancel)"
@@ -175,7 +175,7 @@ func refresh_hover(game: Game, human: Player, ctx: Dictionary) -> void:
 		tile_panel.visible = false
 
 
-func _refresh_end_turn(game: Game, human: Player, my_turn: bool) -> void:
+func _refresh_end_turn(game: Game, human: Player, my_turn: bool, skipped: Dictionary) -> void:
 	if game.state.game_over:
 		_end_turn.text = "Game Over"
 		_end_turn.disabled = true
@@ -186,7 +186,7 @@ func _refresh_end_turn(game: Game, human: Player, my_turn: bool) -> void:
 	var pending := game.pending_decision(human.id)
 	var waiting := 0
 	for u in game.state.player_units(human.id):
-		if u.needs_orders():
+		if game.needs_orders(u) and not skipped.has(u.id):
 			waiting += 1
 	_next_unit.visible = waiting > 0
 	match pending.get("kind", ""):

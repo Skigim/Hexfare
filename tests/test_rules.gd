@@ -1,4 +1,6 @@
 extends TestCase
+## Rules checked through the planning API: orders are issued, then `resolve_ticks()` carries out
+## movement and combat (no economy), so each test sees exactly what it asks about.
 
 
 # --- Movement --------------------------------------------------------------
@@ -31,6 +33,7 @@ func test_any_remaining_move_enters_rough_tile() -> void:
 	s.tile(b).feature = "forest"
 	s.tile(b).elevation = "hills"   # cost 3
 	assert_true(game.move_unit(u.id, b))
+	game.resolve_ticks()
 	assert_eq(u.coord, b, "moved 1 then entered cost-3 tile with 1 move left")
 	assert_eq(u.moves_left, 0)
 
@@ -49,14 +52,17 @@ func test_move_orders_continue_next_turn() -> void:
 	var game := make_flat_game(14, 6)
 	var u := spawn(game, "warrior", 0, 1, 2)
 	var target := Hex.offset_to_axial(6, 2)
+	var p := game.state.player(0)
 	assert_true(game.move_unit(u.id, target))
+	assert_eq(u.coord, Hex.offset_to_axial(1, 2), "planning moves nothing")
+	game.resolve_ticks()
 	assert_eq(Hex.distance(u.coord, target), 3)
-	assert_true(u.has_destination)
-	game._begin_player_turn(game.state.player(0))
+	assert_eq(p.unit_order(u.id).get("type"), "move", "the order carries over")
+	game.resolve_ticks()
 	assert_eq(Hex.distance(u.coord, target), 1)
-	game._begin_player_turn(game.state.player(0))
+	game.resolve_ticks()
 	assert_eq(u.coord, target)
-	assert_false(u.has_destination)
+	assert_true(p.unit_order(u.id).is_empty(), "arrived: order done")
 
 
 func test_no_stacking_military_units() -> void:
@@ -68,11 +74,14 @@ func test_no_stacking_military_units() -> void:
 	assert_true(game.move_unit(settler.id, a.coord), "civilian may share with military")
 
 
-func test_enemy_units_block_movement() -> void:
+func test_enemy_units_block_pathing_but_melee_may_assault() -> void:
 	var game := make_flat_game()
 	var a := spawn(game, "warrior", 0, 4, 4)
 	var e := spawn(game, "warrior", 1, 5, 4)
-	assert_false(game.move_unit(a.id, e.coord))
+	assert_true(Pathfinder.find_path(game.state, a, e.coord).is_empty(), "plain pathing refuses enemy tiles")
+	assert_true(game.move_unit(a.id, e.coord), "a melee unit may plan an assault move")
+	var settler := spawn(game, "settler", 0, 3, 4)
+	assert_false(game.move_unit(settler.id, e.coord), "civilians cannot")
 
 
 # --- Combat ----------------------------------------------------------------
@@ -86,11 +95,13 @@ func test_equal_units_trade_expected_damage() -> void:
 	assert_eq(info.defense, 20)
 	assert_eq(info.damage_to_defender, 30)
 	assert_eq(info.damage_to_attacker, 30)
-	assert_true(game.attack(a.id, d.coord))
+	assert_true(game.move_unit(a.id, d.coord))
+	game.resolve_ticks()
 	assert_between(d.hp, 100 - 36, 100 - 24)
 	assert_between(a.hp, 100 - 36, 100 - 24)
-	assert_eq(a.moves_left, 0)
-	assert_false(game.attack(a.id, d.coord), "one attack per turn")
+	assert_eq(a.moves_left, 0, "fighting ends the unit's turn")
+	assert_eq(a.coord, Hex.offset_to_axial(4, 4), "the defender held")
+	assert_eq(game.state.player(0).unit_order(a.id).get("type"), "move", "the order carries over")
 
 
 func test_terrain_and_fortify_help_defender() -> void:
@@ -119,8 +130,10 @@ func test_ranged_attack_takes_no_damage() -> void:
 	var d := spawn(game, "warrior", 1, 6, 4)
 	assert_eq(Hex.distance(a.coord, d.coord), 2)
 	assert_true(game.attack(a.id, d.coord))
+	game.resolve_ticks()
 	assert_eq(a.hp, 100)
 	assert_true(d.hp < 100)
+	assert_true(game.state.player(0).unit_order(a.id).is_empty(), "a ranged attack is spent")
 
 
 func test_melee_kill_advances_and_captures_civilian() -> void:
@@ -130,7 +143,8 @@ func test_melee_kill_advances_and_captures_civilian() -> void:
 	var civ := spawn(game, "settler", 1, 5, 4)
 	d.hp = 1
 	var target := d.coord
-	assert_true(game.attack(a.id, target))
+	assert_true(game.move_unit(a.id, target))
+	game.resolve_ticks()
 	assert_false(game.state.units.has(d.id), "defender destroyed")
 	assert_eq(a.coord, target, "attacker advanced")
 	assert_eq(civ.owner, 0, "settler captured")
@@ -152,6 +166,7 @@ func test_found_city_claims_tiles() -> void:
 	var settler := spawn(game, "settler", 0, 4, 4)
 	var at := settler.coord
 	assert_true(game.found_city(settler.id))
+	game.resolve_ticks()
 	var city := s.city_at(at)
 	assert_true(city != null)
 	assert_true(city.is_capital(), "first city gets the palace")
@@ -173,6 +188,7 @@ func test_city_yields_growth_and_production() -> void:
 	var settler := spawn(game, "settler", 0, 4, 4)
 	var at := settler.coord
 	game.found_city(settler.id)
+	game.resolve_ticks()
 	var city := s.city_at(at)
 	var y := CityRules.city_yields(s, city)
 	# center 2F1P + worked grass 2F + base (1S 1C) + palace (3P 2S 3G 1C)
@@ -193,6 +209,7 @@ func test_settler_needs_population() -> void:
 	var settler := spawn(game, "settler", 0, 4, 4)
 	var at := settler.coord
 	game.found_city(settler.id)
+	game.resolve_ticks()
 	var city := s.city_at(at)
 	game.set_production(city.id, "unit", "settler")
 	city.production = 100
@@ -212,6 +229,7 @@ func test_borders_grow_with_culture() -> void:
 	var settler := spawn(game, "settler", 0, 4, 4)
 	var at := settler.coord
 	game.found_city(settler.id)
+	game.resolve_ticks()
 	var city := s.city_at(at)
 	for i in 10:
 		CityRules.process_turn(game, city)
@@ -226,14 +244,14 @@ func test_capture_city() -> void:
 	var s := game.state
 	var settler := spawn(game, "settler", 1, 5, 4)
 	var at := settler.coord
-	s.current_player = 1
-	game.found_city(settler.id)
-	s.current_player = 0
+	assert_true(game.found_city(settler.id))
+	game.resolve_ticks()
 	var city := s.city_at(at)
 	city.population = 3
 	city.hp = 1
 	var w := spawn(game, "warrior", 0, 4, 4)
-	assert_true(game.attack(w.id, at))
+	assert_true(game.move_unit(w.id, at), "an assault move onto the city")
+	game.resolve_ticks()
 	assert_eq(city.owner, 0, "captured")
 	assert_eq(city.population, 2)
 	assert_false(city.is_capital())
@@ -251,25 +269,45 @@ func test_strategic_resource_gates_units() -> void:
 	var settler := spawn(game, "settler", 0, 4, 4)
 	var at := settler.coord
 	game.found_city(settler.id)
+	game.resolve_ticks()
 	var city := s.city_at(at)
 	assert_true(CityRules.build_blocker(s, city, "unit", "horseman") != "")
 	s.tile(at + Vector2i(1, 0)).resource = "horses"
 	assert_eq(CityRules.build_blocker(s, city, "unit", "horseman"), "")
 
 
-func test_purchase() -> void:
+func test_purchase_is_planned_then_carried_out() -> void:
 	var game := make_flat_game()
 	var s := game.state
 	var settler := spawn(game, "settler", 0, 4, 4)
 	var at := settler.coord
 	game.found_city(settler.id)
+	game.resolve_ticks()
+	var city := s.city_at(at)
+	s.player(0).gold = 1000
+	assert_true(game.purchase(city.id, "unit", "warrior"), "an order is accepted")
+	assert_eq(s.player(0).gold, 1000, "planning spends nothing")
+	assert_true(s.military_at(at) == null)
+	assert_true(game._do_purchase(city, "unit", "warrior"))
+	assert_eq(s.player(0).gold, 1000 - 90)
+	assert_true(s.military_at(at) != null)
+	assert_true(game._do_purchase(city, "building", "monument"))
+	assert_true(city.has_building("monument"))
+
+
+func test_purchase_order_runs_in_the_economy_phase() -> void:
+	var game := make_flat_game()
+	var s := game.state
+	var settler := spawn(game, "settler", 0, 4, 4)
+	var at := settler.coord
+	game.found_city(settler.id)
+	game.resolve_ticks()
 	var city := s.city_at(at)
 	s.player(0).gold = 1000
 	assert_true(game.purchase(city.id, "unit", "warrior"))
-	assert_eq(s.player(0).gold, 1000 - 90)
-	assert_true(s.military_at(at) != null)
-	assert_true(game.purchase(city.id, "building", "monument"))
-	assert_true(city.has_building("monument"))
+	game.resolve_turn()
+	assert_true(s.military_at(at) != null, "bought unit appeared when the turn resolved")
+	assert_true(s.player(0).orders.is_empty(), "the purchase order is spent")
 
 
 # --- Research --------------------------------------------------------------
@@ -289,6 +327,19 @@ func test_research_path_and_overflow() -> void:
 	assert_true(p.has_tech("archery"))
 	assert_eq(p.research, "mathematics")
 	assert_eq(TechRules.progress(p, "mathematics"), 10)
+
+
+func test_choosing_research_does_not_spend_overflow() -> void:
+	var game := make_flat_game()
+	var p := game.state.player(0)
+	p.science_overflow = 10
+	assert_true(game.set_research(0, "pottery"))
+	assert_eq(p.science_overflow, 10, "planning leaves banked science alone")
+	assert_eq(int(p.research_progress.get("pottery", 0)), 0)
+	assert_eq(TechRules.progress(p, "pottery"), 10, "but it counts toward the new research")
+	TechRules.add_science(game, p, 10)
+	assert_eq(p.science_overflow, 0)
+	assert_eq(TechRules.progress(p, "pottery"), 20)
 
 
 func test_tech_unlocks_listed() -> void:
@@ -314,10 +365,43 @@ func test_save_load_round_trip() -> void:
 	# The loaded game (RNG included) must play on exactly like the original.
 	for g in [game, loaded]:
 		for i in 10:
-			AIPlayer.take_turn(g, g.current_player())
+			AIPlayer.plan_turn(g, g.state.human_player())
 			g.end_turn()
 	assert_eq(loaded.state.turn, 14)
 	assert_eq(JSON.stringify(loaded.state.to_dict()), JSON.stringify(game.state.to_dict()), "diverged after loading")
+
+
+func test_save_mid_plan_resolves_the_same() -> void:
+	var game := Game.new_game({"width": 32, "height": 20, "players": 2, "seed": 5, "human": true})
+	game.start()
+	var human := game.state.human_player()
+	var settler: Unit = game.state.player_units(human.id).filter(func(u): return u.is_civilian())[0]
+	assert_true(game.found_city(settler.id))
+	var path := "user://test_midplan.json"
+	assert_true(SaveLoad.save(game, path))
+	var loaded := SaveLoad.load_game(path)
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	assert_eq(loaded.state.player(human.id).orders.size(), 1, "the plan survives the save")
+	game.end_turn()
+	loaded.end_turn()
+	assert_eq(game.state.player_cities(human.id).size(), 1)
+	assert_eq(JSON.stringify(loaded.state.to_dict()), JSON.stringify(game.state.to_dict()),
+			"resolving after a load matches resolving without one")
+
+
+func test_v1_saves_keep_their_move_destinations() -> void:
+	var game := make_flat_game(14, 6)
+	var u := spawn(game, "warrior", 0, 1, 2)
+	var d: Dictionary = JSON.parse_string(JSON.stringify(game.state.to_dict()))
+	d.version = 1
+	var target := Hex.offset_to_axial(6, 2)
+	for ud in d.units:
+		ud["has_destination"] = true
+		ud["destination"] = [target.x, target.y]
+	var s := GameState.from_dict(d)
+	var order := s.player(0).unit_order(u.id)
+	assert_eq(order.get("type"), "move")
+	assert_eq(Orders.coord(order, "to"), target)
 
 
 # --- Messages --------------------------------------------------------------

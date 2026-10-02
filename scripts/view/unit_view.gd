@@ -31,14 +31,15 @@ var _tween: Tween
 var _badges: _Badges
 
 
-func sync_from(u: Unit, player_color: Color, own: bool) -> void:
+## `order` is the unit's planned order type ("" if none).
+func sync_from(u: Unit, player_color: Color, own: bool, order: String = "") -> void:
 	unit_id = u.id
 	color = player_color
 	icon = Tex.icon(u.def().get("icon", "pawn"))
 	civilian = u.is_civilian()
 	hp_ratio = float(u.hp) / float(Defs.rules.units.max_hp)
-	exhausted = own and u.moves_left <= 0
-	status = "fortified" if u.fortified else ("sleeping" if u.sleeping else ("moving" if u.has_destination else ""))
+	exhausted = own and order != ""
+	status = "fortified" if u.fortified else ("sleeping" if u.sleeping else ("moving" if order == "move" or order == "found_city" else ""))
 	if sprite == null and UnitSprite.has_sheet(u.type):
 		_make_sprite(u.type)
 	if sprite != null:

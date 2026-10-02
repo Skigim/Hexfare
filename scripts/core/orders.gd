@@ -7,7 +7,7 @@ extends RefCounted
 ## with coordinates stored as [x, y] arrays. A unit has one "act" slot; a city has one slot
 ## per order type. Orders are validated by Game.issue_order and carried out by TurnResolver.
 ##
-##   unit:  move {to}, attack {at} (ranged units only), found_city {at}, fortify, sleep, disband
+##   unit:  move {to}, attack {at} (ranged units only), found_city {at}, fortify, sleep, wake, disband
 ##   city:  bombard {at}, purchase {item_kind, item_id}
 ##
 ## There is no melee attack order: melee units fight whatever enemy they meet while moving.
@@ -37,6 +37,11 @@ static func fortify(unit_id: int) -> Dictionary:
 
 static func sleep(unit_id: int) -> Dictionary:
 	return _unit(unit_id, "sleep")
+
+
+## Clears a fortified/sleeping stance when the turn resolves.
+static func wake(unit_id: int) -> Dictionary:
+	return _unit(unit_id, "wake")
 
 
 static func disband(unit_id: int) -> Dictionary:

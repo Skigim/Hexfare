@@ -1,12 +1,14 @@
 class_name AIPlayer
 extends RefCounted
-## Simple rule-based opponent. It acts only through the Game action API, so it obeys
-## the same rules as the human, but it reads the full GameState (ignores fog of war).
+## Simple rule-based opponent. It plans through the same order API as the human, so it obeys
+## the same rules, but it reads the full GameState (ignores fog of war). It never reads other
+## players' orders and never draws from state.rng while planning.
 ##
 ## Per turn: pick research -> pick production -> city bombard -> units
 ## (ranged first, then melee, then settlers). Military units are either city
 ## garrisons or part of a field army that attacks the nearest enemy city once
-## it is big enough.
+## it is big enough. Planning sees the start-of-turn world only, so it tracks the tiles its
+## own units are already headed for (ctx.claimed) to keep them from piling onto one spot.
 
 const BUILDING_PRIORITY: Array[String] = ["monument", "granary", "library", "market", "workshop", "walls", "temple", "university"]
 const TECH_PREFERENCE := {
@@ -16,33 +18,40 @@ const TECH_PREFERENCE := {
 const ARMY_SIZE := 3
 
 
-static func take_turn(game: Game, player: Player) -> void:
+static func plan_turn(game: Game, player: Player) -> void:
 	var state := game.state
 	if not player.alive or state.game_over:
 		return
+	game.clear_orders(player.id)
 	_choose_research(game, player)
 	_assign_garrisons(state, player)
 	_manage_cities(game, player)
 	_city_attacks(game, player)
 	var ctx := _war_context(state, player)
+	ctx["claimed"] = {}
 	var units := state.player_units(player.id)
-	units.sort_custom(func(a, b): return _unit_order(a) < _unit_order(b))
+	units.sort_custom(func(a, b): return _unit_order(a) < _unit_order(b) or (_unit_order(a) == _unit_order(b) and a.id < b.id))
 	for u in units:
 		if state.game_over:
 			return
 		if not state.units.has(u.id) or u.owner != player.id:
 			continue
 		if u.is_civilian():
-			_act_settler(game, player, u)
+			_act_settler(game, player, u, ctx)
 		else:
 			_act_military(game, player, u, ctx)
-	_manage_cities(game, player)
 
 
 static func _unit_order(u: Unit) -> int:
 	if u.is_civilian():
 		return 2
 	return 0 if u.is_ranged() else 1
+
+
+## Deterministic stand-in for a random number in [0, 1): depends only on the seed, the turn and
+## the two keys, so planning never touches state.rng.
+static func _jitter(state: GameState, a: int, b: int) -> float:
+	return float(Orders.mix(state.rng.seed, state.turn, a * 7919 + b)) / 2147483647.0
 
 
 # --- Research & production -------------------------------------------------
@@ -53,7 +62,7 @@ static func _choose_research(game: Game, player: Player) -> void:
 	var best := ""
 	var best_score := -INF
 	for t in TechRules.available(player):
-		var score: float = -float(Defs.techs[t].cost) + TECH_PREFERENCE.get(t, 0) * 10.0 + game.state.rng.randf() * 8.0
+		var score: float = -float(Defs.techs[t].cost) + TECH_PREFERENCE.get(t, 0) * 10.0 + _jitter(game.state, player.id, t.hash()) * 8.0
 		if score > best_score:
 			best_score = score
 			best = t
@@ -67,7 +76,7 @@ static func _manage_cities(game: Game, player: Player) -> void:
 		if city.build.is_empty():
 			var choice := _choose_build(game, player, city)
 			if not choice.is_empty():
-				game.set_production(city.id, choice.kind, choice.id)
+				game.set_production(city.id, choice.kind, choice.id, player.id)
 		_maybe_purchase(game, player, city)
 
 
@@ -164,7 +173,7 @@ static func _best_military(state: GameState, city: City, options: Array) -> Stri
 		var power := float(maxi(int(d.get("strength", 0)), int(d.get("ranged_strength", 0))))
 		if (int(d.get("range", 0)) > 0) == want_ranged:
 			power *= 1.3
-		power += state.rng.randf() * 2.0
+		power += _jitter(state, city.id, str(o.id).hash()) * 2.0
 		if power > best_score:
 			best_score = power
 			best = o.id
@@ -178,7 +187,7 @@ static func _maybe_purchase(game: Game, player: Player, city: City) -> void:
 	var id: String = city.build.id
 	var cost := CityRules.purchase_cost(kind, id)
 	var urgent := kind == "unit" and id != "settler" and _enemies_near(game.state, player.id, city.coord, 3) > 0
-	if (urgent or player.gold > cost + 150) and game.can_purchase(city, kind, id):
+	if urgent or player.gold > cost + 150:
 		game.purchase(city.id, kind, id)
 
 
@@ -208,7 +217,7 @@ static func _city_attacks(game: Game, player: Player) -> void:
 
 # --- Settlers --------------------------------------------------------------
 
-static func _act_settler(game: Game, player: Player, u: Unit) -> void:
+static func _act_settler(game: Game, player: Player, u: Unit, ctx: Dictionary) -> void:
 	var state := game.state
 	if not u.has_ability("found_city"):
 		return
@@ -216,25 +225,38 @@ static func _act_settler(game: Game, player: Player, u: Unit) -> void:
 		game.found_city(u.id)
 		return
 	var target := _ai_coord(u, "target")
-	if target == Hex.NONE or CityRules.found_blocker(state, player.id, target) != "" or state.has_enemy_unit(target, player.id):
-		target = _best_city_site(state, player, u)
+	if target == Hex.NONE or _site_unusable(state, player, target, ctx):
+		target = _best_city_site(state, player, u, ctx)
 		_set_ai_coord(u, "target", target)
 	if target == Hex.NONE:
-		game.skip_unit(u.id)
 		return
-	if u.coord != target and not game.move_unit(u.id, target):
+	# One order walks there and founds the city on arrival.
+	if not game.issue_order(player.id, Orders.found_city(u.id, target)).ok:
 		_set_ai_coord(u, "target", Hex.NONE)
 		return
-	if state.units.has(u.id) and u.coord == target and u.moves_left > 0:
-		game.found_city(u.id)
+	ctx.claimed[target] = true
 
 
-static func _best_city_site(state: GameState, player: Player, u: Unit) -> Vector2i:
+## True if `c` can't be used as a city site: blocked, held by an enemy, or too close to a site
+## another of our settlers is already heading for.
+static func _site_unusable(state: GameState, player: Player, c: Vector2i, ctx: Dictionary) -> bool:
+	if CityRules.found_blocker(state, player.id, c) != "" or state.has_enemy_unit(c, player.id):
+		return true
+	var gap := int(Defs.rules.city.min_distance)
+	for claimed in ctx.claimed:
+		if claimed != c and Hex.distance(claimed, c) < gap:
+			return true
+	return ctx.claimed.has(c)
+
+
+static func _best_city_site(state: GameState, player: Player, u: Unit, ctx: Dictionary) -> Vector2i:
 	var result := Pathfinder.search(state, u, Hex.NONE, u.max_moves() * 8)
 	var best := Hex.NONE
 	var best_score := -INF
-	for c in result.g:
-		if CityRules.found_blocker(state, player.id, c) != "" or state.has_enemy_unit(c, player.id):
+	var coords: Array = result.g.keys()
+	coords.sort_custom(func(a, b): return a.x < b.x or (a.x == b.x and a.y < b.y))
+	for c in coords:
+		if _site_unusable(state, player, c, ctx):
 			continue
 		var score := site_value(state, player, c) - Pathfinder.turns_for(u, result.g[c]) * 2.5
 		if score > best_score:
@@ -329,46 +351,47 @@ static func _war_context(state: GameState, player: Player) -> Dictionary:
 static func _act_military(game: Game, player: Player, u: Unit, ctx: Dictionary) -> void:
 	var state := game.state
 	if u.ai.get("role", "") == "garrison":
-		_act_garrison(game, player, u)
+		_act_garrison(game, player, u, ctx)
 		return
-	if u.hp < 45 and _retreat(game, player, u):
+	if u.hp < 45 and _retreat(game, player, u, ctx):
 		return
-	if _try_attack(game, player, u):
+	if _try_attack(game, player, u, ctx):
 		return
 	var target: City = ctx.target
 	if target != null and state.cities.has(target.id) and target.owner != player.id:
 		if ctx.ready:
 			var stop := u.attack_range() if u.is_ranged() else 1
-			if _approach(game, u, target.coord, stop):
-				_try_attack(game, player, u)
+			if _approach(game, u, target.coord, stop, ctx):
 				return
 		elif ctx.staging != Hex.NONE and Hex.distance(u.coord, ctx.staging) > 2:
-			if _approach(game, u, ctx.staging, 1):
+			if _approach(game, u, ctx.staging, 1, ctx):
 				return
-	if u.moves_left > 0 and not u.fortified:
+	if not u.fortified:
 		game.fortify(u.id)
 
 
-static func _act_garrison(game: Game, player: Player, u: Unit) -> void:
+static func _act_garrison(game: Game, player: Player, u: Unit, ctx: Dictionary) -> void:
 	var city := game.state.get_city(int(u.ai.get("city", -1)))
 	if city == null:
 		return
 	if u.coord != city.coord:
-		if not game.move_unit(u.id, city.coord):
-			_approach(game, u, city.coord, 1)
+		if game.move_unit(u.id, city.coord):
+			ctx.claimed[city.coord] = true
+		else:
+			_approach(game, u, city.coord, 1, ctx)
 		return
-	if u.is_ranged():
-		_try_attack(game, player, u)
-	if game.state.units.has(u.id) and not u.fortified and u.moves_left > 0:
+	if u.is_ranged() and _try_attack(game, player, u, ctx):
+		return
+	if not u.fortified:
 		game.fortify(u.id)
 
 
-## Attacks the most attractive target reachable this turn. Returns true if it attacked.
-static func _try_attack(game: Game, player: Player, u: Unit) -> bool:
+## Plans the most attractive attack on a target in reach this turn. Ranged units shoot from where
+## they stand; melee units move onto the enemy tile and fight when they meet it. Returns true if an
+## order was issued.
+static func _try_attack(game: Game, player: Player, u: Unit, ctx: Dictionary) -> bool:
 	var state := game.state
-	if u.moves_left <= 0 or u.has_attacked:
-		return false
-	var reach := u.attack_range() if u.is_ranged() else u.moves_left + 1
+	var reach := u.attack_range() if u.is_ranged() else u.max_moves() + 1
 	var best := Hex.NONE
 	var best_value := -INF
 	for c in Hex.within(u.coord, reach):
@@ -376,8 +399,8 @@ static func _try_attack(game: Game, player: Player, u: Unit) -> bool:
 			continue
 		var enemy_civilian := state.civilian_at(c)
 		if enemy_civilian != null and enemy_civilian.owner != player.id and state.military_at(c) == null and state.city_at(c) == null and not u.is_ranged():
-			var path := Pathfinder.find_path(state, u, c)
-			if not path.is_empty() and path.size() <= u.moves_left:
+			var path := game.plan_path(u, c)
+			if not path.is_empty() and path.size() <= u.max_moves():
 				best = c
 				best_value = 1000.0
 				break
@@ -390,11 +413,12 @@ static func _try_attack(game: Game, player: Player, u: Unit) -> bool:
 			best = c
 	if best == Hex.NONE or best_value <= 0.0:
 		return false
-	if best_value >= 1000.0:
-		return game.move_unit(u.id, best)
-	if u.is_ranged():
+	if u.is_ranged() and best_value < 1000.0:
 		return game.attack(u.id, best)
-	return game.move_and_attack(u.id, best) and u.has_attacked
+	if game.move_unit(u.id, best):
+		ctx.claimed[best] = true
+		return true
+	return false
 
 
 static func _attack_value(state: GameState, u: Unit, info: Dictionary) -> float:
@@ -417,7 +441,7 @@ static func _attack_value(state: GameState, u: Unit, info: Dictionary) -> float:
 	return float(dealt - taken) + 5.0
 
 
-static func _retreat(game: Game, player: Player, u: Unit) -> bool:
+static func _retreat(game: Game, player: Player, u: Unit, ctx: Dictionary) -> bool:
 	var state := game.state
 	var here := state.city_at(u.coord)
 	if here != null and here.owner == player.id:
@@ -428,23 +452,26 @@ static func _retreat(game: Game, player: Player, u: Unit) -> bool:
 	var best_d := 1 << 20
 	for city in state.player_cities(player.id):
 		var d := Hex.distance(u.coord, city.coord)
-		if d < best_d and not Pathfinder.blocked_by_friend(state, u, city.coord):
+		if d < best_d and not Pathfinder.blocked_by_friend(state, u, city.coord) and not ctx.claimed.has(city.coord):
 			best_d = d
 			best = city
 	if best == null:
 		return false
-	return game.move_unit(u.id, best.coord)
+	if game.move_unit(u.id, best.coord):
+		ctx.claimed[best.coord] = true
+		return true
+	return false
 
 
-## Moves toward a free tile within `stop` of `target`. Returns false if already there or stuck.
-static func _approach(game: Game, u: Unit, target: Vector2i, stop: int) -> bool:
+## Plans a move toward a free tile within `stop` of `target`. Returns false if already there or stuck.
+static func _approach(game: Game, u: Unit, target: Vector2i, stop: int, ctx: Dictionary) -> bool:
 	var state := game.state
 	if Hex.distance(u.coord, target) <= stop:
 		return false
 	var spots: Array = []
 	for c in Hex.ring(target, stop):
 		var t := state.tile(c)
-		if t == null or not t.is_passable_land() or state.has_enemy_unit(c, u.owner):
+		if t == null or not t.is_passable_land() or state.has_enemy_unit(c, u.owner) or ctx.claimed.has(c):
 			continue
 		if Pathfinder.blocked_by_friend(state, u, c):
 			continue
@@ -452,9 +479,13 @@ static func _approach(game: Game, u: Unit, target: Vector2i, stop: int) -> bool:
 		if city != null and city.owner != u.owner:
 			continue
 		spots.append(c)
-	spots.sort_custom(func(a, b): return Hex.distance(a, u.coord) < Hex.distance(b, u.coord))
+	spots.sort_custom(func(a, b):
+		var da := Hex.distance(a, u.coord)
+		var db := Hex.distance(b, u.coord)
+		return da < db or (da == db and (a.x < b.x or (a.x == b.x and a.y < b.y))))
 	for i in mini(3, spots.size()):
 		if game.move_unit(u.id, spots[i]):
+			ctx.claimed[spots[i]] = true
 			return true
 	return false
 

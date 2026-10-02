@@ -1,10 +1,13 @@
 class_name Game
 extends RefCounted
 ## The rules engine's public API. The UI and the AI both drive the game only through
-## these methods, and observe it through the signals. Actions return true on success.
+## these methods, and observe it through the signals.
+##
+## Players PLAN with orders (issue_order and the helpers below), then submit. When every
+## human has submitted, the AI plans and TurnResolver resolves all players' orders at once.
+## Planning never changes the world; only resolution does.
 
 signal changed                                   ## Something changed; views should refresh.
-signal unit_moved(unit: Unit, path: Array)       ## path includes the start tile.
 signal unit_created(unit: Unit)
 signal unit_removed(unit: Unit)
 signal combat_resolved(result: Dictionary)
@@ -13,12 +16,21 @@ signal city_captured(city: City, old_owner: int)
 signal city_changed(city: City)
 signal borders_changed
 signal tech_learned(player: Player, tech_id: String)
-signal turn_started(player: Player)
+signal turn_started(player: Player)              ## A new planning phase began for this human.
+signal turn_resolved(events: Array)              ## Plain-data events of the resolution, by tick.
 signal notified(entry: Dictionary)               ## {turn, player, text, coord}
 signal game_ended(winner: int, victory_type: String)
 
 var state: GameState
 var log_entries: Array = []  # notifications, newest last
+
+# Resolution bookkeeping (valid while a turn resolves).
+var _resolving := false
+var _tick := 0
+var _dirty := false                 # something visible changed during this tick
+var _events: Array = []
+var _elim_pending: Dictionary = {}  # player id -> true; checked at the end of each tick
+var _science_winners: Array = []    # players that finished the last tech this turn
 
 
 # --- Setup -----------------------------------------------------------------
@@ -70,21 +82,27 @@ static func _free_neighbor(s: GameState, c: Vector2i, unit_type: String) -> Vect
 	return c
 
 
-## Starts turn 1. With a human player, runs AI players until it's the human's turn.
-## Without one (simulations), call run_ai_turns() afterwards.
+## Starts the first planning phase. Without a human (simulations) call run_ai_turns() afterwards.
 func start() -> void:
-	state.current_player = 0
-	_begin_player_turn(current_player())
-	if state.human_player() != null:
-		_run_until_human()
+	_reset_budgets()
+	for p in state.players:
+		Visibility.update(state, p)
+	var human := state.human_player()
+	if human != null:
+		turn_started.emit(human)
+	changed.emit()
 
 
-func current_player() -> Player:
-	return state.players[state.current_player]
+func _reset_budgets() -> void:
+	for u in state.units.values():
+		u.moves_left = u.max_moves()
+		u.acted = false
 
 
+## True while the human may still plan this turn.
 func is_human_turn() -> bool:
-	return not state.game_over and current_player().is_human
+	var human := state.human_player()
+	return human != null and human.alive and not human.ready and not state.game_over
 
 
 # --- Notifications ---------------------------------------------------------
@@ -127,12 +145,30 @@ func cancel_order(pid: int, kind: String, id: int, slot: String = Orders.SLOT_AC
 	return true
 
 
+## Removes every planned order of `pid`.
+func clear_orders(pid: int) -> void:
+	var p := state.player(pid)
+	if p != null and not p.ready and not state.game_over:
+		p.clear_orders()
+		changed.emit()
+
+
 ## The orders `viewer` may see for player `pid`: only your own.
 func orders_of(pid: int, viewer: int) -> Array:
 	var p := state.player(pid)
 	if p == null or pid != viewer:
 		return []
 	return p.sorted_orders()
+
+
+## The planned "act" order of a unit, or {}.
+func unit_order(u: Unit) -> Dictionary:
+	return state.player(u.owner).unit_order(u.id)
+
+
+## True if the unit is idle and the player should give it an order this turn.
+func needs_orders(u: Unit) -> bool:
+	return not u.fortified and not u.sleeping and unit_order(u).is_empty()
 
 
 ## "" if `order` is legal for `pid` right now, otherwise the reason it is not.
@@ -184,14 +220,15 @@ func _validate_unit_order(p: Player, order: Dictionary) -> String:
 			var at := Orders.coord(order, "at")
 			if not state.map.in_bounds(at):
 				return "off the map"
-			if CityRules.found_blocker(state, u.owner, at) != "":
-				return CityRules.found_blocker(state, u.owner, at)
+			var blocker := CityRules.found_blocker(state, u.owner, at)
+			if blocker != "":
+				return blocker
 			if at != u.coord and plan_path(u, at).is_empty():
 				return "no path"
 		"fortify":
 			if not u.is_military():
 				return "only military units fortify"
-		"sleep", "disband":
+		"sleep", "wake", "disband":
 			pass
 		_:
 			return "unknown order"
@@ -233,10 +270,11 @@ func _queued_purchase_cost(p: Player, except_city: int) -> int:
 ## Path for planning `u` to `to` with a full movement budget: routes around stationary friendly
 ## units, and may end on an enemy-held tile for melee units (an assault move). [] if impossible.
 func plan_path(u: Unit, to: Vector2i) -> Array:
-	var probe := _plan_probe(u)
+	var probe := plan_probe(u)
 	var blocked := _stationary_friends(u)
-	var enemy_there := state.has_enemy_unit(to, u.owner) and state.military_at(to) != null \
-			or (state.city_at(to) != null and state.city_at(to).owner != u.owner)
+	var city := state.city_at(to)
+	var enemy_there := (state.military_at(to) != null and state.is_enemy(state.military_at(to).owner, u.owner)) \
+			or (city != null and state.is_enemy(city.owner, u.owner))
 	if enemy_there:
 		if not u.can_attack_on_contact():
 			return []
@@ -249,7 +287,7 @@ func plan_path(u: Unit, to: Vector2i) -> Array:
 
 
 ## A copy of `u` with a full movement budget, so planning does not depend on this turn's budget.
-func _plan_probe(u: Unit) -> Unit:
+func plan_probe(u: Unit) -> Unit:
 	var probe := Unit.new()
 	probe.id = u.id
 	probe.type = u.type
@@ -272,7 +310,7 @@ func _stationary_friends(u: Unit) -> Dictionary:
 
 ## True if `u` has a movement order that is not already complete.
 func _is_moving(u: Unit) -> bool:
-	var o := state.player(u.owner).unit_order(u.id)
+	var o := unit_order(u)
 	if o.is_empty():
 		return false
 	if o.type == "move":
@@ -282,8 +320,64 @@ func _is_moving(u: Unit) -> bool:
 	return false
 
 
-# --- Unit actions ----------------------------------------------------------
+# --- Order helpers (for the UI and the AI) ---------------------------------
+# Each returns true if the order was accepted. They plan only; nothing happens until the turn resolves.
 
+func _order_unit(unit_id: int, order: Dictionary) -> bool:
+	var u := state.get_unit(unit_id)
+	return u != null and issue_order(u.owner, order).ok
+
+
+## Plans a move; melee units may target an enemy tile to assault it.
+func move_unit(unit_id: int, target: Vector2i) -> bool:
+	return _order_unit(unit_id, Orders.move(unit_id, target))
+
+
+## Ranged unit: shoot the tile `target` from where it stands.
+func attack(unit_id: int, target: Vector2i) -> bool:
+	return _order_unit(unit_id, Orders.attack(unit_id, target))
+
+
+func found_city(unit_id: int) -> bool:
+	var u := state.get_unit(unit_id)
+	return u != null and issue_order(u.owner, Orders.found_city(unit_id, u.coord)).ok
+
+
+func fortify(unit_id: int) -> bool:
+	return _order_unit(unit_id, Orders.fortify(unit_id))
+
+
+func sleep(unit_id: int) -> bool:
+	return _order_unit(unit_id, Orders.sleep(unit_id))
+
+
+func wake(unit_id: int) -> bool:
+	return _order_unit(unit_id, Orders.wake(unit_id))
+
+
+func disband(unit_id: int) -> bool:
+	return _order_unit(unit_id, Orders.disband(unit_id))
+
+
+## Cancels the unit's planned order (it keeps any stance it already has).
+func cancel_orders(unit_id: int) -> bool:
+	var u := state.get_unit(unit_id)
+	return u != null and cancel_order(u.owner, Orders.KIND_UNIT, unit_id)
+
+
+func city_attack(city_id: int, target: Vector2i) -> bool:
+	var city := state.get_city(city_id)
+	return city != null and issue_order(city.owner, Orders.bombard(city_id, target)).ok
+
+
+func purchase(city_id: int, kind: String, id: String) -> bool:
+	var city := state.get_city(city_id)
+	return city != null and issue_order(city.owner, Orders.purchase(city_id, kind, id)).ok
+
+
+# --- Units -----------------------------------------------------------------
+
+## Server-side: puts a unit on the map. Not part of the player command surface.
 func create_unit(unit_type: String, owner: int, coord: Vector2i) -> Unit:
 	if Pathfinder.blocked_by_friend(state, _probe(unit_type, owner), coord):
 		return null
@@ -297,6 +391,7 @@ func create_unit(unit_type: String, owner: int, coord: Vector2i) -> Unit:
 	u.priority = Orders.mix(state.rng.seed, u.id) % int(Defs.rules.units.priority_range) \
 			+ int(Defs.units[unit_type].get("priority_bonus", 0))
 	state.add_unit(u)
+	_ev("unit_created", {"unit": u.id, "owner": owner, "type": unit_type, "coord": _arr(coord)})
 	unit_created.emit(u)
 	changed.emit()
 	return u
@@ -310,106 +405,35 @@ func _probe(unit_type: String, owner: int) -> Unit:
 	return u
 
 
-func _own_unit(unit_id: int) -> Unit:
-	var u := state.get_unit(unit_id)
-	if u == null or state.game_over or u.owner != state.current_player:
-		return null
-	return u
+func _remove_unit(u: Unit) -> void:
+	state.remove_unit(u)
+	var p := state.player(u.owner)
+	if p != null:
+		p.remove_order(Orders.KIND_UNIT, u.id, Orders.SLOT_ACT)
+	unit_removed.emit(u)
 
 
-## Orders a unit to go to `target`; it moves as far as it can now and continues next turns.
-func move_unit(unit_id: int, target: Vector2i) -> bool:
-	var u := _own_unit(unit_id)
-	if u == null:
-		return false
-	var path := Pathfinder.find_path(state, u, target)
-	if path.is_empty():
-		return false
-	u.has_destination = true
-	u.destination = target
-	u.fortified = false
-	u.sleeping = false
-	_follow_path(u, path)
-	return true
+# --- Resolution primitives (used by TurnResolver) ----------------------------
 
-
-## Moves next to an enemy at `target` and attacks it if movement remains.
-func move_and_attack(unit_id: int, target: Vector2i) -> bool:
-	var u := _own_unit(unit_id)
-	if u == null or not u.is_military() or u.has_attacked:
-		return false
-	if u.is_ranged():
-		return attack(unit_id, target)
-	if Hex.distance(u.coord, target) == 1:
-		return attack(unit_id, target)
-	var path := Pathfinder.find_attack_path(state, u, target)
-	if path.size() < 2:
-		return false
-	path.pop_back()
-	if Pathfinder.blocked_by_friend(state, u, path[-1]):
-		return false
-	u.fortified = false
-	u.sleeping = false
-	u.has_destination = false
-	_follow_path(u, path)
-	if u.moves_left > 0 and Hex.distance(u.coord, target) == 1:
-		return attack(unit_id, target)
-	return true
-
-
-func _follow_path(u: Unit, path: Array) -> void:
-	var traveled: Array = [u.coord]
-	for i in path.size():
-		if u.moves_left <= 0:
-			break
-		var step: Vector2i = path[i]
-		var cost := Pathfinder.step_cost(state, u, state.tile(step))
-		if cost >= Pathfinder.INF:
-			u.has_destination = false
-			break
-		var remaining := maxi(0, u.moves_left - cost)
-		var last := i == path.size() - 1
-		if Pathfinder.blocked_by_friend(state, u, step) and (last or remaining == 0):
-			break
-		state.move_unit_to(u, step)
-		u.moves_left = remaining
-		u.acted = true
-		traveled.append(step)
-		_capture_civilians(u, step)
-	# If the path got blocked while passing through a friend, step back off its tile.
-	while traveled.size() > 1 and Pathfinder.blocked_by_friend(state, u, u.coord):
-		traveled.pop_back()
-		state.move_unit_to(u, traveled[-1])
-	if u.has_destination and u.coord == u.destination:
-		u.has_destination = false
-	if traveled.size() > 1:
-		Visibility.update(state, state.player(u.owner))
-		unit_moved.emit(u, traveled)
-		changed.emit()
-
-
+## A military unit entering a tile captures any enemy civilians there.
 func _capture_civilians(u: Unit, c: Vector2i) -> void:
 	if not u.is_military():
 		return
 	for other in state.units_at(c):
-		if other.owner != u.owner and other.is_civilian():
+		if state.is_enemy(other.owner, u.owner) and other.is_civilian():
 			var old_owner: int = other.owner
+			state.player(old_owner).remove_order(Orders.KIND_UNIT, other.id, Orders.SLOT_ACT)
 			other.owner = u.owner
 			other.moves_left = 0
-			other.has_destination = false
 			other.ai = {}
+			_ev("unit_captured", {"unit": other.id, "owner": u.owner, "old_owner": old_owner, "coord": _arr(c)})
 			notify(u.owner, "Captured an enemy %s!" % other.display_name(), c)
 			notify(old_owner, "Your %s was captured!" % other.display_name(), c)
 			unit_created.emit(other)
 			_check_elimination(old_owner)
 
 
-func found_city(unit_id: int) -> bool:
-	var u := _own_unit(unit_id)
-	if u == null or not u.has_ability("found_city") or u.moves_left <= 0:
-		return false
-	if CityRules.found_blocker(state, u.owner, u.coord) != "":
-		return false
+func _found_city_now(u: Unit) -> void:
 	var player := state.player(u.owner)
 	var city := City.new()
 	city.id = state.new_id()
@@ -433,122 +457,50 @@ func found_city(unit_id: int) -> bool:
 	if neighbor_city != null:
 		CityRules.assign_work(state, neighbor_city)
 	_remove_unit(u)
-	Visibility.update(state, player)
+	_dirty = true
+	_ev("city_founded", {"city": city.id, "owner": city.owner, "coord": _arr(city.coord)})
 	notify(player.id, "%s has been founded." % city.name, city.coord)
 	city_founded.emit(city)
 	borders_changed.emit()
 	changed.emit()
-	return true
 
 
-func fortify(unit_id: int) -> bool:
-	var u := _own_unit(unit_id)
-	if u == null or not u.is_military():
-		return false
-	u.fortified = true
-	u.has_destination = false
-	changed.emit()
-	return true
-
-
-func sleep(unit_id: int) -> bool:
-	var u := _own_unit(unit_id)
-	if u == null:
-		return false
-	u.sleeping = true
-	u.has_destination = false
-	changed.emit()
-	return true
-
-
-func wake(unit_id: int) -> bool:
-	var u := _own_unit(unit_id)
-	if u == null:
-		return false
-	u.sleeping = false
-	u.fortified = false
-	changed.emit()
-	return true
-
-
-func skip_unit(unit_id: int) -> bool:
-	var u := _own_unit(unit_id)
-	if u == null:
-		return false
-	u.skipped = true
-	changed.emit()
-	return true
-
-
-func cancel_orders(unit_id: int) -> bool:
-	var u := _own_unit(unit_id)
-	if u == null:
-		return false
-	u.has_destination = false
-	changed.emit()
-	return true
-
-
-func disband(unit_id: int) -> bool:
-	var u := _own_unit(unit_id)
-	if u == null:
-		return false
-	_remove_unit(u)
-	_check_elimination(u.owner)
-	changed.emit()
-	return true
-
-
-func _remove_unit(u: Unit) -> void:
-	state.remove_unit(u)
-	unit_removed.emit(u)
-
-
-# --- Combat ----------------------------------------------------------------
-
-## Attack target tile: melee units must be adjacent; ranged units within range.
-func attack(unit_id: int, target: Vector2i) -> bool:
-	var u := _own_unit(unit_id)
-	if u == null or not u.is_military() or u.has_attacked or u.moves_left <= 0:
-		return false
-	var dist := Hex.distance(u.coord, target)
-	if dist < 1 or dist > u.attack_range():
-		return false
+## One melee attack by `u` on the tile `target`, applied at once (a melee unit's contact with an enemy).
+## Returns false if there was nothing to attack.
+func _resolve_attack(u: Unit, target: Vector2i) -> bool:
 	var info := Combat.preview(state, u, target)
 	if info.is_empty():
 		return false
-	var roll := Combat.roll(state, info)
-	info.merge(roll)
+	info.merge(Combat.roll(state, info))
 	info.from = u.coord
 	info.target = target
-	u.has_attacked = true
 	u.acted = true
 	u.moves_left = 0
 	u.fortified = false
-	u.has_destination = false
 	var attacker_owner := u.owner
 	var defender_owner := -1
 	if info.defender_kind == "city":
 		var city := state.get_city(info.defender_city_id)
 		defender_owner = city.owner
-		var floor_hp := 1 if u.is_ranged() else 0
-		city.hp = maxi(floor_hp, city.hp - int(roll.to_defender))
-		u.hp -= int(roll.to_attacker)
+		city.hp = maxi(0, city.hp - int(info.to_defender))
+		u.hp -= int(info.to_attacker)
 		info.defender_hp = city.hp
 		info.attacker_hp = u.hp
 		if u.hp <= 0:
 			_kill_unit(u, "destroyed attacking %s" % city.name)
 		elif city.hp <= 0 and u.can_capture_cities():
 			_capture_city(city, u)
+		_record_attack(info, attacker_owner, defender_owner)
 		combat_resolved.emit(info)
 		notify(defender_owner, "%s was attacked by %s." % [city.name, article("%s %s" % [state.player(attacker_owner).name, u.display_name()])], city.coord)
 	else:
 		var d := state.get_unit(info.defender_unit_id)
 		defender_owner = d.owner
-		d.hp -= int(roll.to_defender)
-		u.hp -= int(roll.to_attacker)
+		d.hp -= int(info.to_defender)
+		u.hp -= int(info.to_attacker)
 		info.defender_hp = d.hp
 		info.attacker_hp = u.hp
+		_record_attack(info, attacker_owner, defender_owner)
 		combat_resolved.emit(info)
 		var d_name := d.display_name()
 		var attacker_desc := article("%s %s" % [state.player(attacker_owner).name, u.display_name()])
@@ -559,56 +511,36 @@ func attack(unit_id: int, target: Vector2i) -> bool:
 			notify(defender_owner, "Your %s was attacked by %s (%d HP left)." % [d_name, attacker_desc, d.hp], target)
 		if u.hp <= 0:
 			_kill_unit(u, "destroyed attacking %s" % article(d_name))
-		elif d.hp <= 0 and not u.is_ranged() and state.military_at(target) == null and state.city_at(target) == null:
+		elif d.hp <= 0 and state.military_at(target) == null and state.city_at(target) == null:
+			var from := u.coord
 			state.move_unit_to(u, target)
+			_ev("move", {"unit": u.id, "owner": u.owner, "from": _arr(from), "to": _arr(target)})
 			_capture_civilians(u, target)
-			unit_moved.emit(u, [info.from, target])
-	for pid in [attacker_owner, defender_owner]:
-		if pid >= 0:
-			Visibility.update(state, state.player(pid))
+	_dirty = true
 	changed.emit()
 	return true
 
 
-## A city shoots at an enemy unit within range (once per turn).
-func city_attack(city_id: int, target: Vector2i) -> bool:
-	var city := state.get_city(city_id)
-	if city == null or state.game_over or city.owner != state.current_player or city.has_attacked:
-		return false
-	if Hex.distance(city.coord, target) > int(Defs.rules.city.ranged_range):
-		return false
-	var info := Combat.preview_city_attack(state, city, target)
-	if info.is_empty():
-		return false
-	var roll := Combat.roll(state, info)
-	info.merge(roll)
-	info.from = city.coord
-	info.target = target
-	city.has_attacked = true
-	var d := state.get_unit(info.defender_unit_id)
-	d.hp -= int(roll.to_defender)
-	info.defender_hp = d.hp
-	info.attacker_hp = city.hp
-	combat_resolved.emit(info)
-	if d.hp <= 0:
-		_kill_unit(d, "destroyed by the city of %s" % city.name)
-	else:
-		notify(d.owner, "Your %s was bombarded by %s (%d HP left)." % [d.display_name(), city.name, d.hp], target)
-	changed.emit()
-	return true
+func _record_attack(info: Dictionary, attacker_owner: int, defender_owner: int) -> void:
+	_ev("attack", {
+		"from": _arr(info.from), "target": _arr(info.target), "ranged": info.ranged,
+		"attacker_owner": attacker_owner, "defender_owner": defender_owner,
+		"to_defender": int(info.to_defender), "to_attacker": int(info.to_attacker),
+		"attacker_hp": int(info.attacker_hp), "defender_hp": int(info.defender_hp),
+	})
 
 
+## True if a city has enemy units within bombard range (used to decide whether to plan a bombardment).
 func city_can_attack(city: City) -> bool:
-	if city.has_attacked:
-		return false
 	for c in Hex.within(city.coord, int(Defs.rules.city.ranged_range)):
 		var u := state.military_at(c)
-		if u != null and u.owner != city.owner:
+		if u != null and state.is_enemy(u.owner, city.owner):
 			return true
 	return false
 
 
 func _kill_unit(u: Unit, reason: String) -> void:
+	_ev("unit_died", {"unit": u.id, "owner": u.owner, "type": u.type, "coord": _arr(u.coord)})
 	notify(u.owner, "Your %s was %s." % [u.display_name(), reason], u.coord)
 	_remove_unit(u)
 	_check_elimination(u.owner)
@@ -629,13 +561,16 @@ func _capture_city(city: City, conqueror: Unit) -> void:
 	city.production = 0
 	city.food = 0
 	city.culture = 0
+	state.player(old_owner).remove_order(Orders.KIND_CITY, city.id, "purchase")
+	state.player(old_owner).remove_order(Orders.KIND_CITY, city.id, "bombard")
 	for t in state.map.tiles:
 		if t.city_id == city.id:
 			t.owner = new_owner
 	var from := conqueror.coord
 	state.move_unit_to(conqueror, city.coord)
+	_ev("move", {"unit": conqueror.id, "owner": new_owner, "from": _arr(from), "to": _arr(city.coord)})
+	_ev("city_captured", {"city": city.id, "owner": new_owner, "old_owner": old_owner, "coord": _arr(city.coord)})
 	_capture_civilians(conqueror, city.coord)
-	unit_moved.emit(conqueror, [from, city.coord])
 	CityRules.assign_work(state, city)
 	if was_capital:
 		_relocate_capital(old_owner)
@@ -655,11 +590,15 @@ func _relocate_capital(pid: int) -> void:
 	notify(pid, "The palace has moved to %s." % remaining[0].name, remaining[0].coord)
 
 
-# --- Cities and research ---------------------------------------------------
+# --- Cities and research (planning intent) -----------------------------------
 
-func set_production(city_id: int, kind: String, id: String) -> bool:
+## Chooses what a city builds. Pure intent: nothing is spent until production completes.
+## `pid` (optional) restricts the change to that player's own cities.
+func set_production(city_id: int, kind: String, id: String, pid: int = -1) -> bool:
 	var city := state.get_city(city_id)
-	if city == null or state.game_over or city.owner != state.current_player:
+	if city == null or state.game_over or (pid >= 0 and city.owner != pid):
+		return false
+	if state.player(city.owner).ready:
 		return false
 	if CityRules.build_blocker(state, city, kind, id) != "":
 		return false
@@ -683,10 +622,9 @@ func can_purchase(city: City, kind: String, id: String, committed: int = 0) -> b
 	return true
 
 
-## Buys a unit or building immediately with gold.
-func purchase(city_id: int, kind: String, id: String) -> bool:
-	var city := state.get_city(city_id)
-	if city == null or state.game_over or city.owner != state.current_player or not can_purchase(city, kind, id):
+## Carries out a purchase order during resolution.
+func _do_purchase(city: City, kind: String, id: String) -> bool:
+	if city.owner < 0 or not can_purchase(city, kind, id):
 		return false
 	var player := state.player(city.owner)
 	player.gold -= CityRules.purchase_cost(kind, id)
@@ -708,7 +646,7 @@ func purchase(city_id: int, kind: String, id: String) -> bool:
 
 func set_research(pid: int, tech_id: String) -> bool:
 	var p := state.player(pid)
-	if p == null or not TechRules.set_research(p, tech_id):
+	if p == null or p.ready or not TechRules.set_research(p, tech_id):
 		return false
 	changed.emit()
 	return true
@@ -721,7 +659,10 @@ func learn_tech(player: Player, tech_id: String) -> void:
 		notify(player.id, "%s can now be seen on the map." % Defs.resources[res].name)
 	tech_learned.emit(player, tech_id)
 	if Defs.rules.victory.get("science", true) and TechRules.has_all(player):
-		_end_game(player.id, "science")
+		if _resolving:
+			_science_winners.append(player.id)
+		else:
+			_end_game(player.id, "science")
 
 
 # --- Turn flow -------------------------------------------------------------
@@ -737,80 +678,118 @@ func pending_decision(pid: int) -> Dictionary:
 	return {}
 
 
-## Ends the human's turn, runs all AI turns, and starts the human's next turn.
+## Locks in `pid`'s orders. When every human has submitted, the AI plans and the turn resolves.
+func submit_turn(pid: int) -> bool:
+	var p := state.player(pid)
+	if p == null or not p.alive or p.ready or state.game_over:
+		return false
+	p.ready = true
+	changed.emit()
+	_try_resolve()
+	return true
+
+
+## Takes a submission back, as long as the turn has not resolved yet.
+func unsubmit_turn(pid: int) -> bool:
+	var p := state.player(pid)
+	if p == null or not p.ready or state.game_over:
+		return false
+	p.ready = false
+	changed.emit()
+	return true
+
+
+## Submits the human's orders (single-player convenience).
 func end_turn() -> void:
-	if state.game_over or not current_player().is_human:
-		return
-	_end_player_turn(current_player())
-	_advance()
-	_run_until_human()
+	var human := state.human_player()
+	if human != null:
+		submit_turn(human.id)
 
 
-## For simulations/tests: plays AI turns until `last_turn` has finished or the game ends.
+func _try_resolve() -> void:
+	for p in state.players:
+		if p.alive and p.is_human and not p.ready:
+			return
+	resolve_turn()
+
+
+## For simulations/tests with no human: AI players plan and resolve until `last_turn` has finished.
 func run_ai_turns(last_turn: int) -> void:
 	var guard := 0
 	while not state.game_over and state.turn <= last_turn and guard < 100000:
-		var p := current_player()
-		AIPlayer.take_turn(self, p)
-		_end_player_turn(p)
-		_advance()
+		resolve_turn()
 		guard += 1
 
 
-func _run_until_human() -> void:
-	var guard := 0
-	while not state.game_over and guard < 1000:
-		var p := current_player()
-		if p.is_human:
-			turn_started.emit(p)
-			changed.emit()
-			return
-		AIPlayer.take_turn(self, p)
-		_end_player_turn(p)
-		_advance()
-		guard += 1
-	changed.emit()
+func _plan_ai_players() -> void:
+	for p in state.players:
+		if p.alive and not p.is_human and not p.ready:
+			AIPlayer.plan_turn(self, p)
+			p.ready = true
 
 
-func _advance() -> void:
+## Lets the AI plan, then resolves everyone's orders at once. Returns the events by tick.
+func resolve_turn() -> Array:
 	if state.game_over:
-		return
-	var n := state.players.size()
-	var idx := state.current_player
-	for _i in n:
-		idx = (idx + 1) % n
-		if idx == 0:
-			state.turn += 1
-			if state.turn > int(Defs.rules.victory.get("turn_limit", 100000)):
-				_end_game(_leader_by_score(), "score")
-				return
-		if state.players[idx].alive:
-			break
-	state.current_player = idx
-	_begin_player_turn(state.players[idx])
+		return []
+	_plan_ai_players()
+	_begin_resolution()
+	var resolver := TurnResolver.new(self)
+	resolver.run_ticks()
+	resolver.run_economy()
+	_end_resolution()
+	var events := _events
+	turn_resolved.emit(events)
+	var human := state.human_player()
+	if human != null and human.alive and not state.game_over:
+		turn_started.emit(human)
+	changed.emit()
+	return events
 
 
-func _begin_player_turn(p: Player) -> void:
+## Test hook: only the movement/combat ticks (no economy, healing or turn rollover).
+func resolve_ticks() -> Array:
+	_begin_resolution()
+	TurnResolver.new(self).run_ticks()
+	_resolving = false
+	return _events
+
+
+func _begin_resolution() -> void:
+	_resolving = true
+	_events = []
+	_elim_pending.clear()
+	_science_winners.clear()
+	_tick = 0
+	for u in state.units.values():
+		u.moves_left = u.max_moves()
+
+
+## Healing, budget refill, clearing submissions, advancing the clock, and deciding victory.
+func _end_resolution() -> void:
 	var r: Dictionary = Defs.rules.units
-	for u in state.player_units(p.id):
+	var ids: Array = state.units.keys()
+	ids.sort()
+	for uid in ids:
+		var u: Unit = state.units[uid]
 		if not u.acted:
 			u.hp = mini(int(r.max_hp), u.hp + _heal_amount(u))
-		u.moves_left = u.max_moves()
-		u.has_attacked = false
-		u.skipped = false
 		u.acted = false
-	for city in state.player_cities(p.id):
+		u.moves_left = u.max_moves()
+	for city in state.cities.values():
 		city.has_attacked = false
 		city.hp = mini(Combat.city_max_hp(city), city.hp + int(Defs.rules.city.heal_per_turn))
-	Visibility.update(state, p)
-	for u in state.player_units(p.id):
-		if u.has_destination and state.units.has(u.id):
-			var path := Pathfinder.find_path(state, u, u.destination)
-			if path.is_empty():
-				u.has_destination = false
-				notify(p.id, "Your %s could not reach its destination." % u.display_name(), u.coord)
-			else:
-				_follow_path(u, path)
+	for p in state.players:
+		p.ready = false
+		if not p.alive:
+			p.clear_orders()
+	state.turn += 1
+	state.time += int(Defs.rules.turn.seconds)
+	for p in state.players:
+		if p.alive:
+			Visibility.update(state, p)
+	_resolving = false
+	_decide_victory()
 
 
 func _heal_amount(u: Unit) -> int:
@@ -823,7 +802,8 @@ func _heal_amount(u: Unit) -> int:
 	return int(r.heal_field)
 
 
-func _end_player_turn(p: Player) -> void:
+## One player's income, city processing, science and fog for the economy phase.
+func _economy_for(p: Player) -> void:
 	if not p.alive:
 		return
 	var income := CityRules.player_income(state, p.id)
@@ -839,11 +819,26 @@ func _end_player_turn(p: Player) -> void:
 func _bankrupt(p: Player) -> void:
 	var units := state.player_units(p.id).filter(func(u): return u.is_military())
 	if not units.is_empty():
-		units.sort_custom(func(a, b): return a.def().cost < b.def().cost)
+		units.sort_custom(func(a, b): return a.def().cost < b.def().cost or (a.def().cost == b.def().cost and a.id < b.id))
 		var u: Unit = units[0]
 		notify(p.id, "Out of gold! Your %s was disbanded." % u.display_name(), u.coord)
 		_remove_unit(u)
 	p.gold = 0
+
+
+# --- Events ----------------------------------------------------------------
+
+## Records a plain-data event for this resolution (tick 0 = before the first tick).
+func _ev(type: String, data: Dictionary = {}) -> void:
+	if not _resolving:
+		return
+	var e := {"tick": _tick, "type": type}
+	e.merge(data)
+	_events.append(e)
+
+
+static func _arr(c: Vector2i) -> Array:
+	return [c.x, c.y]
 
 
 # --- Victory ---------------------------------------------------------------
@@ -859,26 +854,48 @@ func score(pid: int) -> int:
 	return total
 
 
-func _leader_by_score() -> int:
+## Highest score wins; equal scores go to the lower player id.
+func _leader_by_score(candidates: Array = []) -> int:
 	var best := -1
 	var best_score := -1
 	for p in state.players:
-		if p.alive and score(p.id) > best_score:
+		if not p.alive or (not candidates.is_empty() and not candidates.has(p.id)):
+			continue
+		if score(p.id) > best_score:
 			best_score = score(p.id)
 			best = p.id
 	return best
 
 
 func _check_elimination(pid: int) -> void:
+	if _resolving:
+		_elim_pending[pid] = true
+		return
+	if _eliminate_if_destroyed(pid):
+		_check_victory()
+
+
+## Applies the eliminations recorded since the last call (at the end of each tick).
+func _process_eliminations() -> void:
+	var pids: Array = _elim_pending.keys()
+	pids.sort()
+	_elim_pending.clear()
+	for pid in pids:
+		_eliminate_if_destroyed(pid)
+
+
+## A player with no cities and no settlers is out. Returns true if it just was eliminated.
+func _eliminate_if_destroyed(pid: int) -> bool:
 	var p := state.player(pid)
 	if p == null or not p.alive:
-		return
+		return false
 	if not state.player_cities(pid).is_empty():
-		return
+		return false
 	for u in state.player_units(pid):
 		if u.has_ability("found_city"):
-			return
+			return false
 	p.alive = false
+	p.clear_orders()
 	for u in state.player_units(pid):
 		_remove_unit(u)
 	for t in state.map.tiles:
@@ -888,17 +905,34 @@ func _check_elimination(pid: int) -> void:
 	for other in state.players:
 		notify(other.id, "The %s civilization has been destroyed!" % p.name)
 	borders_changed.emit()
+	return true
+
+
+## Decided once, after the whole turn resolved. Ties go to the higher score, then the lower id.
+func _decide_victory() -> void:
+	if state.game_over:
+		return
+	if not _science_winners.is_empty():
+		_end_game(_leader_by_score(_science_winners), "science")
+		return
 	_check_victory()
+	if state.game_over:
+		return
+	if state.turn > int(Defs.rules.victory.get("turn_limit", 100000)):
+		_end_game(_leader_by_score(), "score")
 
 
 func _check_victory() -> void:
 	if state.game_over:
 		return
+	var alive := state.players.filter(func(p): return p.alive)
+	if alive.is_empty():
+		_end_game(-1, "draw")
+		return
 	var human := state.human_player()
 	if human != null and not human.alive:
 		_end_game(_leader_by_score(), "defeat")
 		return
-	var alive := state.players.filter(func(p): return p.alive)
 	if alive.size() == 1 and Defs.rules.victory.get("domination", true):
 		_end_game(alive[0].id, "domination")
 

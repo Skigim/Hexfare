@@ -78,6 +78,11 @@ func show_city(game: Game, city: City, own: bool, my_turn: bool) -> void:
 			city.production, cost, "%d turns" % turns if turns > 0 else "never"], 16))
 		_content.add_child(UI.progress(city.production, cost, Tex.YIELD_COLORS.production))
 
+	var queued := s.player(city.owner).order_for(Orders.KIND_CITY, city.id, "purchase")
+	if not queued.is_empty():
+		_content.add_child(UI.label("Buying %s when the turn resolves" % CityRules.item_name(queued.item_kind, queued.item_id), 15, UITheme.ACCENT))
+	if not s.player(city.owner).order_for(Orders.KIND_CITY, city.id, "bombard").is_empty():
+		_content.add_child(UI.label("Bombardment planned", 15, UITheme.ACCENT))
 	if my_turn and game.city_can_attack(city):
 		_content.add_child(UI.button("Bombard (city attack)", func(): bombard_pressed.emit(),
 			"The city can shoot an enemy unit within %d tiles." % int(Defs.rules.city.ranged_range)))
@@ -127,7 +132,7 @@ func _build_row(game: Game, city: City, player: Player, kind: String, id: String
 		b.add_theme_stylebox_override("normal", UITheme.box(UITheme.BUTTON, UITheme.ACCENT, 5, 8))
 	row.add_child(b)
 	var price := CityRules.purchase_cost(kind, id)
-	var buy := UI.button("%dg" % price, func(): purchase_chosen.emit(kind, id), "Buy now for %d gold." % price, Tex.yield_icon("gold"))
+	var buy := UI.button("%dg" % price, func(): purchase_chosen.emit(kind, id), "Buy when the turn resolves, for %d gold." % price, Tex.yield_icon("gold"))
 	buy.custom_minimum_size.x = 86
 	buy.disabled = not my_turn or not game.can_purchase(city, kind, id)
 	row.add_child(buy)
