@@ -93,7 +93,8 @@ func test_ranged_sheets_mark_their_release() -> void:
 func test_borders_wait_for_a_city_being_built() -> void:
 	var game := make_flat_game()
 	var u := spawn(game, "settler", 0, 4, 3)
-	assert_true(game.found_city(u.id), "city founded")
+	assert_true(game.found_city(u.id), "city planned")
+	game.resolve_ticks()
 	var city: City = game.state.cities.values()[0]
 	var layer := BorderLayer.new()
 	layer.state = game.state

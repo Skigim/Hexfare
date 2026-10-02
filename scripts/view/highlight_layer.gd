@@ -9,6 +9,7 @@ var hover := Hex.NONE
 var range_center := Hex.NONE     # draw a range ring (city bombard / ranged)
 var range_radius := 0
 var worked: Array = []           # tiles worked by the selected city (citizen markers)
+var planned: Array = []          # [{points: [coords], kind: "move"|"found"|"attack"}] planned orders
 
 
 func _draw() -> void:
@@ -22,6 +23,8 @@ func _draw() -> void:
 	for c in targets:
 		_fill(c, hexagon, Color(1, 0.2, 0.15, 0.28))
 		_outline(c, Color(1, 0.3, 0.25, 0.95), 4.0)
+	for o in planned:
+		_draw_planned(o)
 	var citizen := Tex.icon("character")
 	for c in worked:
 		var p := Hex.to_pixel(c) + Vector2(-30, 26)
@@ -33,6 +36,26 @@ func _draw() -> void:
 		_outline(hover, Color(1, 1, 1, 0.8), 3.0)
 	if selected != Hex.NONE:
 		_outline(selected, Color(1, 0.85, 0.2, 1.0), 4.5)
+
+
+func _draw_planned(o: Dictionary) -> void:
+	var pts := PackedVector2Array()
+	for c in o.points:
+		pts.append(Hex.to_pixel(c))
+	if pts.size() < 2:
+		return
+	var color := Color(0.45, 0.75, 1.0, 0.9)
+	if o.kind == "attack":
+		color = Color(1, 0.35, 0.3, 0.9)
+	elif o.kind == "found":
+		color = Color(0.4, 0.9, 0.5, 0.9)
+	draw_polyline(pts, Color(0, 0, 0, 0.4), 8.0, true)
+	draw_polyline(pts, color, 4.0, true)
+	var end := pts[pts.size() - 1]
+	if o.kind == "found":
+		draw_arc(end, 14, 0, TAU, 24, color, 4.0, true)
+	else:
+		draw_circle(end, 10, color)
 
 
 func _fill(c: Vector2i, hexagon: PackedVector2Array, color: Color) -> void:

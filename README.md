@@ -15,33 +15,35 @@ whole AI games to catch regressions.
    From a terminal: `godot --path <this folder>`.
 3. On the title screen pick a map size, the number of AI opponents and (optionally) a seed.
 
-First turn: select your settler and press **B** to found your capital, pick something to build,
-pick a technology, then press **Enter** to end the turn. The big button in the bottom-right
-corner always says what still needs a decision.
+First turn: select your settler and press **B** to plan founding your capital, pick a technology,
+then press **Enter** to submit the turn. Turns are planned, then resolved all at once: the city
+appears when the turn resolves, and the next turn asks what it should build. The big button in the
+bottom-right corner always says what still needs a decision.
 
 ## Controls
 
 | Input | Action |
 |---|---|
 | Left-click | Select a unit or city (click again to cycle through what's on the tile) |
-| Right-click | Move the selected unit or attack; with your city selected, bombard a unit in range |
+| Right-click | Plan a move for the selected unit (onto an enemy: an assault move); with your city selected, plan a bombardment of a unit in range |
 | WASD / arrow keys, middle-drag | Pan |
 | Mouse wheel | Zoom |
-| Tab or `.` | Next unit waiting for orders |
-| Space | Skip the unit's turn |
+| Tab or `.` | Next unit without an order |
+| Space | Skip the unit this turn (no order, and it stops asking) |
 | F | Fortify (military) / sleep (civilian) |
-| B | Found a city (settler) |
-| R | Ranged attack, then click a target |
+| B | Plan founding a city (settler) |
+| R | Plan a ranged attack (ranged units only), then click a target tile |
 | C | Center the camera on the selection |
 | T | Technology tree |
-| Enter | End turn |
+| Enter | Submit the turn (orders resolve) |
 | Esc | Close the tech tree / cancel targeting / deselect / pause menu |
 | F5 / F9 | Quick save / quick load |
 | G | Hex grid |
 | F10 | Reveal the whole map (debug) |
 
-Hovering an enemy with a unit selected shows the combat forecast: both strengths with a
-breakdown of every modifier, and the expected damage each way.
+The unit panel's **Cancel Order** button drops a unit's planned order. Hovering an enemy with a
+unit selected shows the combat forecast: both strengths with a breakdown of every modifier, and
+the expected damage each way. Planned orders are drawn on the map as paths.
 
 ## Rules at a glance
 
@@ -54,18 +56,25 @@ breakdown of every modifier, and the expected damage each way.
 - **Cities**: founded by settlers at least 3 tiles apart; the first one gets the Palace. Each
   citizen eats 2 food and works a tile (picked automatically, food first); surplus food grows the
   city. Culture claims one new tile at a time. Cities build one thing at a time; anything on the
-  build list can be bought outright for 3× its production cost in gold.
+  build list can be bought outright for 3× its production cost in gold (a planned purchase
+  is paid for when the turn resolves).
 - **Economy**: five yields (food, production, gold, science, culture). Every city adds 1 science
   and 1 culture, plus 0.5 science and 0.5 gold per citizen (rounded down). Buildings cost gold upkeep, and so do
   units beyond 3 free plus 1 per city. Running out of gold disbands a unit.
-- **Movement**: Civ V-style. A unit with any moves left may enter any passable tile, and go-to
-  orders continue across turns. Each tile holds at most one military and one civilian unit.
+- **Turns**: every player plans orders, then all orders resolve simultaneously (see
+  *Architecture*). Orders to move or found a city persist across turns until done or cancelled.
+- **Movement**: Civ V-style. A unit with any moves left may enter any passable tile. Resolution
+  runs in ticks of one step per unit; units with higher priority (a hidden per-unit number) claim
+  contested tiles first. A blocked unit stops for the turn and keeps its order. Each tile holds
+  at most one military and one civilian unit.
 - **Combat**: Civ VI-style. Damage = 30 × e^((attack − defense) / 25) × random(0.8–1.2) on a
   100 HP scale. Modifiers: terrain +3, fortified +4, −1 per 10 HP lost, unit bonuses (spearman vs.
-  mounted, catapult vs. cities). Ranged attacks take no retaliation. Cities have 200 HP (+100 with
-  walls), bombard units within 2 tiles once per turn, and fall to a melee unit that brings them to
-  0 HP (ranged attacks stop at 1 HP). A melee unit that kills a defender advances and captures any
-  civilian there.
+  mounted, catapult vs. cities). Ranged units attack a planned tile at the start of resolution,
+  all at once, and take no retaliation. Melee units have no attack order: one whose next step
+  enters an enemy-held tile (unit or city) attacks instead, whatever its order was, and then stops
+  for the turn. Cities have 200 HP (+100 with walls), bombard a planned tile within 2 tiles once
+  per turn, and fall to a melee unit that brings them to 0 HP (ranged attacks stop at 1 HP). A
+  melee unit that kills a defender advances and captures any civilian there.
 - **Technology**: 14 techs in 5 tiers. Choosing a tech deep in the tree queues its prerequisites;
   extra science carries over.
 - **Victory**: domination (last civilization standing), science (research every tech) or the
@@ -77,7 +86,7 @@ breakdown of every modifier, and the expected damage each way.
 ```
 data/            Content and balance (JSON). Start here when iterating.
 scenes/          main_menu.tscn and game.tscn (thin: the UI is built in code)
-scripts/core/    Game state (map, tiles, units, cities, players) and Game, the action API
+scripts/core/    Game state (map, tiles, units, cities, players), Game (the command API), Orders and TurnResolver
 scripts/rules/   Stateless rules: yields, pathfinding, combat, cities, tech, visibility, map generation
 scripts/ai/      Rule-based AI opponent
 scripts/view/    Map rendering (layers, unit and city views, camera) and the game screen controller
@@ -91,23 +100,35 @@ assets/          Kenney CC0 art copied from the all-in-one pack
 
 - **`GameState`** holds everything that is saved: map, players, units, cities, turn and the RNG.
   These are plain `RefCounted` objects with `to_dict()` / `from_dict()` for JSON saves.
-- **`Game`** is the only code that changes the state. Every action is a method that validates,
-  applies and emits signals: `move_unit`, `move_and_attack`, `attack`, `found_city`, `fortify`,
-  `set_production`, `purchase`, `set_research`, `city_attack`, `end_turn`, and so on. Illegal
-  actions return `false` and change nothing.
+- **Orders.** Players never change the state directly. They *plan*: `Game.issue_order(pid, order)`
+  validates an order (`scripts/core/orders.gd`: `move`, `attack`, `found_city`, `fortify`, `sleep`,
+  `wake`, `disband` for units; `bombard` and `purchase` for cities) and stores it on the player, one
+  per actor and slot. Planning is side-effect-free: it changes no unit, tile, gold or RNG state, and
+  helpers such as `move_unit`, `found_city` and `purchase` only plan. `set_production` and
+  `set_research` store intent the same way. Illegal orders return `{ok: false, reason}`.
+- **Resolution.** `submit_turn(pid)` marks a player ready; when every human is ready the AIs plan
+  and `Game.resolve_turn()` runs `TurnResolver`. `Game` is still the only code that changes the
+  state, and the resolver is its sanctioned way to do it: ticks (ranged attacks and bombards first,
+  then moves in priority order, then city founding), followed by an economy phase (disbands,
+  purchases, growth, income, science, healing, eliminations, victory). `end_turn()` is the
+  single-player shortcut for submit-and-resolve. Resolution is announced by `turn_resolved(events)`,
+  a list of plain-data events.
 - **Rules modules** (`Yields`, `Pathfinder`, `Combat`, `CityRules`, `TechRules`, `Visibility`,
   `MapGenerator`) are static functions over the state. The UI calls the same functions for its
-  previews (paths, combat odds, turns to build), so what the UI shows is what will happen.
-- **`AIPlayer`** acts only through the `Game` API, so it obeys the same rules as the player. It
-  does read the whole state, ignoring fog of war.
+  previews (paths, combat odds, turns to build). Previews show the *planned* situation from the
+  current positions: other players' orders are hidden and enemies may move, so a forecast fight may
+  not happen and an unplanned one may.
+- **`AIPlayer`** plans through the same `issue_order` API, so it obeys the same rules as the player,
+  and it never reads other players' orders. It does read the whole state, ignoring fog of war.
 - **The view never mutates the game.** `MapView.sync()` reconciles the scene with the state after
-  `Game.changed`; animations hang off `unit_moved` and `combat_resolved`. `GameScene` turns input
-  into `Game` calls; HUD panels emit signals that `GameScene` handles.
-- **Turn order**: the human (always player 0) acts, then `end_turn()` processes their cities,
-  gold and science, runs every AI turn, and starts the next turn (healing, fresh moves, go-to
-  orders continue).
+  `Game.changed`; animations are driven by `turn_resolved` and `combat_resolved`. `GameScene` turns
+  input into `Game` calls; HUD panels emit signals that `GameScene` handles.
+- **Turn flow**: the human (always player 0) plans and presses Enter; the AIs plan; everything
+  resolves at once and the next planning phase begins. `state.time` counts game seconds
+  (`rules.turn.seconds` per turn) for the game-time economy to come.
 - **Determinism**: all randomness goes through `state.rng`, which is saved with the game, so a
-  seed plus the same actions replays identically. The simulation tests rely on this.
+  seed plus the same orders replays identically. Planning never draws from it, and ties (unit
+  priority, AI choices) use the integer mixer `Orders.mix`. The simulation tests rely on this.
 
 ## Extending
 
@@ -158,8 +179,9 @@ beside `build_water.py`. `-- --frames=N` renders an N-frame loop per tile as a s
 `{"frames", "fps"}` json, for animating later; the game draws still tiles only for now.
 
 **Code-level features** (a new unit ability, a new yield, a new victory type) follow the same
-path: add the rule as a `Game` action or a rules-module function, expose it in the relevant HUD
-panel, teach `AIPlayer` to use it, and add a test.
+path: add an order type (`Orders`, validated in `Game.validate_order`, carried out in
+`TurnResolver`) or a rules-module function, expose it in the relevant HUD panel, teach `AIPlayer`
+to plan it, and add a test.
 
 ## Tests and tools
 
@@ -215,7 +237,7 @@ The game scene accepts these flags after `--` (for example
 |---|---|
 | `--seed=N`, `--size=small\|medium\|large`, `--players=N` | New-game settings |
 | `--load` | Start from the quick save instead |
-| `--autoplay=N` | The AI plays your civilization for N turns |
+| `--autoplay=N` | The AI plans and submits your civilization's turns for N turns |
 | `--reveal` | Reveal the map |
 | `--select=city\|unit\|military` | Select your first city / first unit / unit nearest an enemy |
 | `--tech`, `--zoom=Z` | Open the tech tree / set the camera zoom |
@@ -226,8 +248,9 @@ The game scene accepts these flags after `--` (for example
 
 Intentionally left out to keep the base small: naval units and embarking, workers and tile
 improvements, roads and rivers, happiness, diplomacy and trade, religion, great people, zone of
-control, a multi-item build queue, choosing your civilization, and multiplayer. The AI sees
-through fog of war.
+control, a multi-item build queue, choosing your civilization, and networked multiplayer (turns
+are already planned and resolved simultaneously, but there is only one human seat). The AI sees
+through fog of war, and resolution plays back every unit's route at once rather than tick by tick.
 
 ## Roadmap and contributing
 

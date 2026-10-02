@@ -7,14 +7,11 @@ var type: String = ""
 var owner: int = 0
 var coord: Vector2i
 var hp: int = 100
-var moves_left: int = 0
+var moves_left: int = 0     # movement budget; spent while a turn resolves, refilled when it ends
 var fortified := false
 var sleeping := false
-var skipped := false        # "skip turn" pressed; cleared at turn start
-var acted := false          # moved or attacked this turn (blocks healing next turn)
-var has_attacked := false
-var has_destination := false
-var destination := Vector2i.ZERO
+var acted := false          # moved or attacked this turn (blocks healing)
+var priority: int = 0       # movement priority: higher acts first when orders resolve
 var ai: Dictionary = {}     # scratch memory for the AI
 
 
@@ -47,6 +44,11 @@ func can_capture_cities() -> bool:
 	return is_military() and not is_ranged()
 
 
+## Melee military units fight any enemy they run into while moving.
+func can_attack_on_contact() -> bool:
+	return is_military() and not is_ranged()
+
+
 func max_moves() -> int:
 	return int(def().get("moves", 2))
 
@@ -59,17 +61,11 @@ func has_ability(ability: String) -> bool:
 	return ability in def().get("abilities", [])
 
 
-## True when the unit is idle and the player should give it an order this turn.
-func needs_orders() -> bool:
-	return moves_left > 0 and not fortified and not sleeping and not skipped and not has_destination
-
-
 func to_dict() -> Dictionary:
 	return {
 		"id": id, "type": type, "owner": owner, "coord": [coord.x, coord.y], "hp": hp,
-		"moves_left": moves_left, "fortified": fortified, "sleeping": sleeping, "skipped": skipped,
-		"acted": acted, "has_attacked": has_attacked, "has_destination": has_destination,
-		"destination": [destination.x, destination.y], "ai": ai,
+		"moves_left": moves_left, "fortified": fortified, "sleeping": sleeping,
+		"acted": acted, "ai": ai, "priority": priority,
 	}
 
 
@@ -83,10 +79,7 @@ static func from_dict(d: Dictionary) -> Unit:
 	u.moves_left = int(d.moves_left)
 	u.fortified = d.fortified
 	u.sleeping = d.sleeping
-	u.skipped = d.skipped
 	u.acted = d.acted
-	u.has_attacked = d.has_attacked
-	u.has_destination = d.has_destination
-	u.destination = Vector2i(int(d.destination[0]), int(d.destination[1]))
 	u.ai = Defs.normalize(d.ai)
+	u.priority = int(d.get("priority", 0))
 	return u

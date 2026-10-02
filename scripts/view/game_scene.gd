@@ -20,6 +20,8 @@ var targeting := ""          # "", "ranged" (selected unit), "city" (selected ci
 var hover := Hex.NONE
 var show_grid := false
 var _combat_preview: Dictionary = {}
+var _skipped: Dictionary = {}       # unit id -> true: "skip" pressed this turn (UI only)
+var _path_cache: Dictionary = {}    # planned-path cache for the order overlay
 var _dirty := true
 var _args: Dictionary = {}
 var _last_zoom := 0.0
@@ -83,7 +85,7 @@ func _connect_signals() -> void:
 	hud.end_turn_pressed.connect(_on_end_turn)
 	hud.next_unit_pressed.connect(func(): _select_next_unit(true))
 	hud.unit_action.connect(_on_unit_action)
-	hud.production_chosen.connect(func(cid, kind, id): game.set_production(cid, kind, id))
+	hud.production_chosen.connect(func(cid, kind, id): game.set_production(cid, kind, id, human.id))
 	hud.purchase_chosen.connect(func(cid, kind, id): game.purchase(cid, kind, id))
 	hud.bombard_pressed.connect(func(_cid): _set_targeting("city"))
 	hud.city_closed.connect(_clear_selection)
@@ -128,6 +130,7 @@ func _hud_context() -> Dictionary:
 	return {
 		"unit": game.state.get_unit(selected_unit_id), "city": game.state.get_city(selected_city_id),
 		"hover": hover, "combat": _combat_preview, "reveal_all": map_view.reveal_all, "targeting": targeting,
+		"skipped": _skipped,
 	}
 
 
@@ -138,6 +141,7 @@ func _update_highlights() -> void:
 	hl.selected = Hex.NONE
 	hl.range_center = Hex.NONE
 	hl.worked = []
+	hl.planned = _planned_overlays()
 	var u := _selected_own_unit()
 	var any_unit := game.state.get_unit(selected_unit_id)
 	if any_unit != null:
@@ -183,15 +187,21 @@ func _update_hover() -> void:
 		map_view.path.start = u.coord
 		map_view.path.attack_target = hover
 		if not u.is_ranged() and Hex.distance(u.coord, hover) > 1:
-			var p := Pathfinder.find_attack_path(s, u, hover)
+			var p := game.plan_path(u, hover)
 			if p.size() >= 2:
 				p.pop_back()
-				map_view.path.steps = Pathfinder.annotate(s, u, p)
+				map_view.path.steps = Pathfinder.annotate(s, game.plan_probe(u), p)
 	else:
-		var p := Pathfinder.find_path(s, u, hover)
+		var p := game.plan_path(u, hover)
 		if not p.is_empty():
 			map_view.path.start = u.coord
-			map_view.path.steps = Pathfinder.annotate(s, u, p)
+			map_view.path.steps = Pathfinder.annotate(s, game.plan_probe(u), p)
+			# A melee unit fights whatever enemy it meets on the way: warn about the first one.
+			if u.can_attack_on_contact():
+				for step in p:
+					if _is_enemy_target(step):
+						_combat_preview = Combat.preview(s, u, step)
+						break
 	map_view.path.queue_redraw()
 
 
@@ -208,9 +218,9 @@ func _is_enemy_target(c: Vector2i) -> bool:
 
 func _attack_targets(u: Unit) -> Array:
 	var out: Array = []
-	if not u.is_military() or u.has_attacked or u.moves_left <= 0:
+	if not u.is_military():
 		return out
-	var reach := u.attack_range() if u.is_ranged() else u.moves_left + 1
+	var reach := u.attack_range() if u.is_ranged() else u.max_moves() + 1
 	var reachable := {} if u.is_ranged() else Pathfinder.reachable(game.state, u)
 	for c in Hex.within(u.coord, reach):
 		if c == u.coord or not _is_enemy_target(c):
@@ -231,12 +241,39 @@ func _attack_targets(u: Unit) -> Array:
 
 func _city_targets(city: City) -> Array:
 	var out: Array = []
-	if city.has_attacked:
-		return out
 	for c in Hex.within(city.coord, int(Defs.rules.city.ranged_range)):
 		var m := game.state.military_at(c)
 		if m != null and m.owner != city.owner and map_view.is_visible_to_viewer(c):
 			out.append(c)
+	return out
+
+
+## Planned orders of the human, as polylines for the overlay: [{points: [coords], kind: String}].
+func _planned_overlays() -> Array:
+	var out: Array = []
+	var s := game.state
+	if _path_cache.size() > 300:
+		_path_cache.clear()
+	for o in game.orders_of(human.id, human.id):
+		if o.kind == Orders.KIND_CITY:
+			var city := s.get_city(int(o.id))
+			if city != null and o.type == "bombard":
+				out.append({"points": [city.coord, Orders.coord(o, "at")], "kind": "attack"})
+			continue
+		var u := s.get_unit(int(o.id))
+		if u == null:
+			continue
+		match o.type:
+			"attack":
+				out.append({"points": [u.coord, Orders.coord(o, "at")], "kind": "attack"})
+			"move", "found_city":
+				var dest := Orders.coord(o, "to" if o.type == "move" else "at")
+				var key := "%d:%s:%s" % [u.id, str(u.coord), str(dest)]
+				if not _path_cache.has(key):
+					_path_cache[key] = game.plan_path(u, dest) if dest != u.coord else []
+				var points: Array = [u.coord]
+				points.append_array(_path_cache[key])
+				out.append({"points": points, "kind": "found" if o.type == "found_city" else "move"})
 	return out
 
 
@@ -305,9 +342,9 @@ func _select_at(c: Vector2i) -> void:
 
 
 func _select_next_unit(center: bool) -> void:
-	var waiting := game.state.player_units(human.id).filter(func(u): return u.needs_orders())
+	var waiting := game.state.player_units(human.id).filter(func(u): return _needs_orders(u))
 	if waiting.is_empty():
-		if selected_unit_id != -1 and _selected_own_unit() != null and not _selected_own_unit().needs_orders():
+		if selected_unit_id != -1 and _selected_own_unit() != null and not _needs_orders(_selected_own_unit()):
 			_clear_selection()
 		return
 	waiting.sort_custom(func(a, b): return a.id < b.id)
@@ -323,9 +360,14 @@ func _select_next_unit(center: bool) -> void:
 
 func _after_unit_action(uid: int) -> void:
 	var u := game.state.get_unit(uid)
-	if u == null or not u.needs_orders():
+	if u == null or not _needs_orders(u):
 		_select_next_unit(true)
 	_mark_dirty()
+
+
+## Idle units the player has not skipped.
+func _needs_orders(u: Unit) -> bool:
+	return game.needs_orders(u) and not _skipped.has(u.id)
 
 
 # --- Input -----------------------------------------------------------------
@@ -384,7 +426,7 @@ func _on_right_click(c: Vector2i) -> void:
 			if Hex.distance(u.coord, c) <= u.attack_range():
 				game.attack(u.id, c)
 		else:
-			game.move_and_attack(u.id, c)
+			game.move_unit(u.id, c)  # an assault move: the unit fights whatever it meets
 	else:
 		game.move_unit(u.id, c)
 	_after_unit_action(u.id)
@@ -473,11 +515,7 @@ func _on_unit_action(action_name: String) -> void:
 	var uid := u.id
 	match action_name:
 		"found":
-			var at := u.coord
-			if game.found_city(uid):
-				var city := game.state.city_at(at)
-				_select_city(city.id)
-				return
+			game.found_city(uid)
 		"fortify":
 			game.fortify(uid)
 		"sleep":
@@ -485,7 +523,7 @@ func _on_unit_action(action_name: String) -> void:
 		"wake":
 			game.wake(uid)
 		"skip":
-			game.skip_unit(uid)
+			_skipped[uid] = true
 		"cancel":
 			game.cancel_orders(uid)
 		"disband":
@@ -516,6 +554,7 @@ func _on_end_turn() -> void:
 
 
 func _on_turn_started(_player: Player) -> void:
+	_skipped.clear()
 	selected_unit_id = -1
 	_select_next_unit(true)
 	_mark_dirty()
@@ -608,7 +647,7 @@ func _run_automation() -> void:
 	for i in int(_args.get("autoplay", "0")):
 		if game.state.game_over or not game.is_human_turn():
 			break
-		AIPlayer.take_turn(game, human)
+		AIPlayer.plan_turn(game, human)
 		game.end_turn()
 	map_view.animate = true
 	match _args.get("select", ""):

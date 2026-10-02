@@ -29,11 +29,20 @@ Godot 4.7 is installed via WinGet (not on PATH):
 
 ## Architecture rules
 
-- `Game` (scripts/core/game.gd) is the only code that mutates `GameState`. UI and AI both go
-  through its action methods; add new player actions there.
+- `Game` (scripts/core/game.gd) is the only code that mutates `GameState`. Players and the AI
+  *plan*: `Game.issue_order(pid, order)` (schema in `scripts/core/orders.gd`) stores an order on the
+  player and changes nothing else. Planning must stay side-effect-free: no unit, tile, gold or
+  `state.rng` changes. Add new player actions as an order type (`Orders` constructor,
+  `Game.validate_order`, handling in `TurnResolver`), not as an immediate mutation.
+- `TurnResolver` (scripts/core/turn_resolver.gd) is the sanctioned mutation path: `Game.resolve_turn`
+  runs ticks, then the economy phase. `create_unit` and `learn_tech` are server-side calls, not
+  player commands. The UI and AI never call resolution internals.
 - Rules live in static modules under `scripts/rules/`; the UI calls the same functions for previews.
 - The view (`scripts/view/`, `scripts/ui/`) never mutates state. It re-syncs on `Game.changed`.
-- All randomness goes through `state.rng` so games are deterministic (a test checks this).
+- All randomness goes through `state.rng` so games are deterministic (a test checks this). Only the
+  resolver draws from it; planning (including the AI) uses `Orders.mix(a, b, c)` for tie-breaks.
+  Resolution order is always explicit (priority desc, then id): determinism tests compare
+  `JSON.stringify(state.to_dict())`, so never rely on dictionary insertion order.
 - Everything saved must be JSON-safe; `Unit.ai` is AI scratch memory and must hold only
   ints/strings/arrays/dictionaries. JSON numbers load as floats: pass loaded data through `Defs.normalize`.
 - Content and balance belong in `data/*.json`, not code. New units/buildings/techs need no code;
@@ -54,6 +63,9 @@ Repo: `Skigim/Hexfare` (default branch `main`). See CONTRIBUTING.md.
   methods): declare the type (`var owner: int = d.owner`).
 - Typed arrays: start from a typed variable (`var a: Array[String] = []`); a ternary of array
   literals is not typed.
+- Orders are JSON-safe dicts with coordinates as `[x, y]` (use `Orders.coord`); `Player.orders` is
+  an array and `_order_index` is derived (never saved). The save format is v2: bump `VERSION` and
+  migrate when changing saved fields.
 - `City.buildings` and `Player.techs` are dictionaries (`id -> true`), not arrays.
 - Map clicks: convert `event.position` through the canvas transform (`GameScene._event_coord`);
   `get_global_mouse_position()` breaks injected input in tests.

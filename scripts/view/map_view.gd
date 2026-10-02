@@ -51,7 +51,7 @@ func setup(g: Game, viewing_player: Player) -> void:
 	overlays.state = game.state
 	overlays.viewer = viewer
 	terrain.build(game.state.map)
-	game.unit_moved.connect(_on_unit_moved)
+	game.turn_resolved.connect(play_events)
 	game.combat_resolved.connect(_on_combat)
 	game.city_founded.connect(_on_city_founded)
 	sync()
@@ -137,7 +137,8 @@ func _sync_units(s: GameState) -> void:
 			_unit_views[u.id] = v
 			v.position = unit_position(u)
 			v.coord = u.coord
-		v.sync_from(u, s.player(u.owner).color, viewer != null and u.owner == viewer.id)
+		v.sync_from(u, s.player(u.owner).color, viewer != null and u.owner == viewer.id,
+				s.player(u.owner).unit_order(u.id).get("type", ""))
 		v.visible = is_visible_to_viewer(u.coord)
 		if not v.is_animating() and (v.coord != u.coord or v.position != unit_position(u)):
 			v.position = unit_position(u)
@@ -167,16 +168,27 @@ func unit_view(uid: int) -> UnitView:
 
 # --- Animations ------------------------------------------------------------
 
-func _on_unit_moved(u: Unit, traveled: Array) -> void:
-	var v: UnitView = _unit_views.get(u.id)
-	if not animate or v == null or not is_visible_to_viewer(u.coord):
+## Plays a resolved turn's movement: every unit walks its recorded route at the same time.
+## (The turn has already been resolved; this only animates the views from where they stood.)
+func play_events(events: Array) -> void:
+	if not animate:
 		return
-	var pts: Array = []
-	for i in range(1, traveled.size()):
-		pts.append(Hex.to_pixel(traveled[i]))
-	pts[pts.size() - 1] = unit_position(u)
-	v.coord = u.coord
-	v.animate_path(pts, 0.09, UnitView.DEATH_TIME if _body_at(u.coord, v) else 0.0)
+	var routes: Dictionary = {}  # unit id -> world points, in the order the unit moved
+	for e in events:
+		if e.type != "move":
+			continue
+		var pts: Array = routes.get(e.unit, [])
+		pts.append(Hex.to_pixel(Vector2i(int(e.to[0]), int(e.to[1]))))
+		routes[e.unit] = pts
+	for uid in routes:
+		var u := game.state.get_unit(uid)
+		var v: UnitView = _unit_views.get(uid)
+		if u == null or v == null or not is_visible_to_viewer(u.coord):
+			continue
+		var route: Array = routes[uid]
+		route[route.size() - 1] = unit_position(u)
+		v.coord = u.coord
+		v.animate_path(route, 0.09, UnitView.DEATH_TIME if _body_at(u.coord, v) else 0.0)
 
 
 ## True if a unit killed in this fight is lying on the hex (its view is removed only after the

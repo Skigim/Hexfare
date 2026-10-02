@@ -44,22 +44,14 @@ func _run() -> void:
 		await _click_world(Hex.to_pixel(settler.coord), MOUSE_BUTTON_LEFT)
 	_check(scene.selected_unit_id == settler.id, "clicking cycles to the settler")
 
-	# 2. Found a city with the B hotkey.
+	# 2. Plan founding a city with the B hotkey. Nothing happens until the turn resolves.
 	var home := settler.coord
 	await _key(KEY_B)
-	var city := s.city_at(home)
-	_check(city != null, "B founds a city")
-	_check(scene.selected_city_id == (city.id if city != null else -2), "city panel opens after founding")
-	_check(scene.hud.city_panel.visible, "city panel visible")
+	_check(human.unit_order(settler.id).get("type", "") == "found_city", "B plans founding a city")
+	_check(s.city_at(home) == null, "planning founds nothing yet")
+	_check(scene.selected_unit_id == warrior.id, "the next idle unit is selected")
 
-	# 3. Choose production by clicking the Warrior button in the city panel.
-	var warrior_button := _find_button(scene.hud.city_panel, "Warrior")
-	_check(warrior_button != null, "Warrior build button exists")
-	if warrior_button != null:
-		await _click_control(warrior_button)
-	_check(city != null and city.build.get("id", "") == "warrior", "clicking Warrior sets production")
-
-	# 4. End Turn button first asks for research; the tech tree opens.
+	# 3. End Turn first asks for research; the tech tree opens.
 	await _click_control(scene.hud._end_turn)
 	_check(scene.hud.tech_tree.visible, "End Turn opens the tech tree when research is unset")
 	var pottery := _find_button(scene.hud.tech_tree, "Pottery")
@@ -70,14 +62,16 @@ func _run() -> void:
 	await _key(KEY_ESCAPE)
 	_check(not scene.hud.tech_tree.visible, "Esc closes the tech tree")
 
-	# 5. Select the warrior with Tab and right-click to move it two tiles away.
-	await _key(KEY_TAB)
-	_check(scene.selected_unit_id == warrior.id, "Tab selects the idle warrior")
+	# 4. Select the warrior and right-click to plan a move two tiles away.
+	if scene.selected_unit_id != warrior.id:
+		await _key(KEY_TAB)
+	_check(scene.selected_unit_id == warrior.id, "the idle warrior is selected")
 	await get_tree().create_timer(0.5).timeout  # let the camera finish centering
+	var start := warrior.coord
 	var target := Hex.NONE
 	for c in Hex.ring(warrior.coord, 2):
 		var t := s.tile(c)
-		if t != null and t.is_passable_land() and t.move_cost() == 1 and s.units_at(c).is_empty() and not Pathfinder.find_path(s, warrior, c).is_empty():
+		if t != null and t.is_passable_land() and t.move_cost() == 1 and s.units_at(c).is_empty() and not game.plan_path(warrior, c).is_empty():
 			target = c
 			break
 	_check(target != Hex.NONE, "found a destination for the warrior")
@@ -85,12 +79,27 @@ func _run() -> void:
 		await _move_mouse_world(Hex.to_pixel(target))
 		_check(not scene.map_view.path.steps.is_empty(), "hovering shows a path preview")
 		await _click_world(Hex.to_pixel(target), MOUSE_BUTTON_RIGHT)
-		_check(warrior.coord != home, "right-click moves the warrior")
+		_check(human.unit_order(warrior.id).get("type", "") == "move", "right-click plans a move")
+		_check(warrior.coord == start, "the warrior has not moved yet")
 
-	# 6. End the turn with Enter; AI players move; it's our turn 2.
+	# 5. End the turn with Enter: orders resolve, AI players move, it's our turn 2.
 	await _key(KEY_ENTER)
 	_check(s.turn == 2, "Enter ends the turn (turn is %d)" % s.turn)
 	_check(game.is_human_turn(), "control returns to the human")
+	var city := s.city_at(home)
+	_check(city != null, "the planned city was founded when the turn resolved")
+	if target != Hex.NONE:
+		_check(warrior.coord != start, "the warrior moved when the turn resolved")
+
+	# 6. The new city needs production: End Turn opens it, and clicking Warrior sets it.
+	await _click_control(scene.hud._end_turn)
+	_check(city != null and scene.selected_city_id == city.id, "End Turn opens the city that needs production")
+	_check(scene.hud.city_panel.visible, "city panel visible")
+	var warrior_button := _find_button(scene.hud.city_panel, "Warrior")
+	_check(warrior_button != null, "Warrior build button exists")
+	if warrior_button != null:
+		await _click_control(warrior_button)
+	_check(city != null and city.build.get("id", "") == "warrior", "clicking Warrior sets production")
 
 	# 7. Quick save and the pause menu.
 	await _key(KEY_F5)

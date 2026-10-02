@@ -46,14 +46,17 @@ static func set_research(player: Player, tech_id: String) -> bool:
 	var path := path_to(player, tech_id)
 	player.research = path[0]
 	player.research_queue = path.slice(1)
-	if player.science_overflow > 0:
-		player.research_progress[player.research] = int(player.research_progress.get(player.research, 0)) + player.science_overflow
-		player.science_overflow = 0
 	return true
 
 
+## Science banked toward `tech_id`. Overflow earned while nothing was being researched counts
+## toward the current research (it is folded into the saved progress when science is next added,
+## so choosing research stays a pure planning action).
 static func progress(player: Player, tech_id: String) -> int:
-	return int(player.research_progress.get(tech_id, 0))
+	var banked := int(player.research_progress.get(tech_id, 0))
+	if tech_id == player.research:
+		banked += player.science_overflow
+	return banked
 
 
 static func turns_left(player: Player, tech_id: String, science_per_turn: int) -> int:
@@ -68,6 +71,7 @@ static func add_science(game: Game, player: Player, amount: int) -> void:
 	if player.research == "":
 		player.science_overflow += amount
 		return
+	_fold_overflow(player)
 	player.research_progress[player.research] = progress(player, player.research) + amount
 	while player.research != "" and not game.state.game_over:
 		var tech := player.research
@@ -87,6 +91,12 @@ static func add_science(game: Game, player: Player, amount: int) -> void:
 			player.science_overflow += extra
 		else:
 			player.research_progress[player.research] = progress(player, player.research) + extra
+
+
+static func _fold_overflow(player: Player) -> void:
+	if player.science_overflow > 0 and player.research != "":
+		player.research_progress[player.research] = int(player.research_progress.get(player.research, 0)) + player.science_overflow
+		player.science_overflow = 0
 
 
 ## {"units": [...], "buildings": [...], "resources": [...], "bonuses": [text]}

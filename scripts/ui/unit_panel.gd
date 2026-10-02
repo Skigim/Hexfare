@@ -48,7 +48,8 @@ func show_unit(game: Game, u: Unit, own: bool, my_turn: bool) -> void:
 		parts.append("Strength %d" % int(u.def().strength))
 		if u.is_ranged():
 			parts.append("Ranged %d (range %d)" % [int(u.def().ranged_strength), u.attack_range()])
-	parts.append("Moves %d/%d" % [u.moves_left, u.max_moves()])
+	parts.append("Moves %d" % u.max_moves())
+	parts.append("Priority %d" % u.priority)
 	parts.append("HP %d/%d" % [u.hp, int(Defs.rules.units.max_hp)])
 	_stats.text = "   ".join(parts)
 	UI.clear(_buttons)
@@ -62,19 +63,18 @@ func _add_buttons(game: Game, u: Unit) -> void:
 	if u.has_ability("found_city"):
 		var blocker := CityRules.found_blocker(s, u.owner, u.coord)
 		var b := _button("Found City (B)", "found", blocker if blocker != "" else "Found a new city on this tile.")
-		b.disabled = blocker != "" or u.moves_left <= 0
+		b.disabled = blocker != ""
 	if u.is_ranged():
-		var b := _button("Ranged Attack (R)", "ranged", "Choose a target within range %d." % u.attack_range())
-		b.disabled = u.has_attacked or u.moves_left <= 0
+		_button("Ranged Attack (R)", "ranged", "Choose a target within range %d. A ranged unit shoots or moves, not both." % u.attack_range())
 	if u.is_military() and not u.fortified:
 		_button("Fortify (F)", "fortify", "+%d defense until moved. Heals if left alone." % int(Defs.rules.combat.fortify_bonus))
 	if u.is_civilian() and not u.sleeping:
 		_button("Sleep", "sleep", "Stop asking for orders until woken.")
 	if u.fortified or u.sleeping:
 		_button("Wake", "wake", "Resume asking for orders.")
-	if u.has_destination:
-		_button("Cancel Move", "cancel", "Clear the current movement order.")
-	if u.moves_left > 0:
+	if not game.unit_order(u).is_empty():
+		_button("Cancel Order", "cancel", "Clear this unit's planned order.")
+	if game.needs_orders(u):
 		_button("Skip (Space)", "skip", "Do nothing this turn.")
 	_button("Disband", "disband", "Delete this unit (saves upkeep).")
 
@@ -88,14 +88,32 @@ func _button(text: String, action_name: String, tooltip: String) -> Button:
 func _status_text(game: Game, u: Unit, own: bool) -> String:
 	if not own:
 		return "Enemy unit."
+	var order := game.unit_order(u)
+	if not order.is_empty():
+		return _order_text(order)
 	if u.fortified:
 		return "Fortified."
 	if u.sleeping:
 		return "Sleeping."
-	if u.has_destination:
-		return "Moving to a destination."
-	if u.moves_left <= 0:
-		return "No moves left this turn."
 	if u.has_ability("found_city"):
 		return "Right-click to move. Found cities on good land (min. %d tiles apart)." % int(Defs.rules.city.min_distance)
-	return "Right-click a tile to move, or an enemy to attack."
+	return "Right-click a tile to move, or an enemy to attack. Melee units fight anything they meet on the way."
+
+
+static func _order_text(order: Dictionary) -> String:
+	match order.type:
+		"move":
+			return "Planned: move to %s." % str(Orders.coord(order, "to"))
+		"found_city":
+			return "Planned: found a city at %s." % str(Orders.coord(order, "at"))
+		"attack":
+			return "Planned: shoot at %s." % str(Orders.coord(order, "at"))
+		"fortify":
+			return "Planned: fortify."
+		"sleep":
+			return "Planned: sleep."
+		"wake":
+			return "Planned: wake up."
+		"disband":
+			return "Planned: disband."
+	return "Planned: %s." % order.type

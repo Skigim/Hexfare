@@ -9,6 +9,7 @@ func test_ai_builds_within_its_budget() -> void:
 	var settler := spawn(game, "settler", 0, 4, 4)
 	var at := settler.coord
 	game.found_city(settler.id)
+	game.resolve_ticks()
 	var city := s.city_at(at)
 	city.buildings["monument"] = true
 	for t in ["pottery", "writing"]:  # granary and library: 1 upkeep each
