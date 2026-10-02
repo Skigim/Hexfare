@@ -6,18 +6,7 @@
 	},
 	"warrior": {
 		"name": "Warrior", "class": "melee", "icon": "character",
-		"cost": 30, "strength": 20, "moves": 2, "sight": 2,
-		"model": {
-			"rig": "Medium",
-			"right": {"scene": "sword_A"},
-			"left": {"scene": "shield_A", "rotation": [0, 90, 0]},
-			"clips": {
-				"idle": {"clip": "Idle_B", "left_arm": "Melee_Blocking"},
-				"walk": {"clip": "Walking_A", "left_arm": "Melee_Blocking"},
-				"attack": {"clip": "Melee_1H_Attack_Chop", "left_arm": "Melee_Blocking"},
-				"hit": "Melee_Block_Hit"
-			}
-		}
+		"cost": 30, "strength": 20, "moves": 2, "sight": 2
 	},
 	"archer": {
 		"name": "Archer", "class": "ranged", "icon": "bow", "tech": "archery",

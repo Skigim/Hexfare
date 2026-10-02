@@ -177,15 +177,6 @@ panel, teach `AIPlayer` to use it, and add a test.
   needs a window: `godot --path . res://tests/ui_smoke_test.tscn`.
 - Screenshots for visual checks:
   `.\tools\screenshot.ps1 -Out shots\city.png -GameArgs "--seed=5","--autoplay=40","--select=city"`.
-- 3D unit models (KayKit Mannequin rig + shared animation packs + weapon bits) are described by an
-  optional `"model"` block in `data/units.json`: the pieces held in each hand and the clip for each
-  role (idle, walk, attack, hit, death). A role can borrow an arm from another clip, e.g. walking
-  with the shield arm in the guard pose. Weapons sit in hand slots that match how KayKit models
-  them, so most need no rotation; see the comments in `scripts/view/unit_model.gd`.
-  `res://scenes/unit_preview.tscn` cycles a unit through its roles. `-- --unit=warrior --sheet=out.png`
-  saves a contact sheet (`--clips=walk,Melee_Block` picks rows, `--facing=90` turns the model) and
-  `--right-rot=x,y,z` / `--left-rot=x,y,z` try a piece rotation without editing the data. Only the
-  warrior has a model so far, and the map does not draw models yet.
 - Sprite-sheet units (the 2D alternative) are built in Blender from scratch by a script:
   `E:\Blender\blender.exe -b --factory-startup --python art/warrior/build_warrior.py` (~1 min) models,
   rigs and animates the warrior, saves `art/warrior/warrior.blend` for hand tweaks, and renders
@@ -240,6 +231,4 @@ The code and Blender scripts are [MIT](LICENSE). The bundled third-party art is 
 
 ## Credits
 
-Art and fonts by [Kenney](https://kenney.nl), CC0 (see `assets/LICENSE-kenney.txt`). Character
-animations and weapon pieces by [Kay Lousberg (KayKit)](https://www.kaylousberg.com), CC0 (the
-`License.txt` files in `assets/KayKit_*`). Built with [Godot Engine](https://godotengine.org).
+Art and fonts by [Kenney](https://kenney.nl), CC0 (see `assets/LICENSE-kenney.txt`). Built with [Godot Engine](https://godotengine.org).
