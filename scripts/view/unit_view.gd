@@ -27,6 +27,7 @@ var status := ""        # "", "fortified", "sleeping", "moving"
 var sprite: UnitSprite
 var dying := false      # killed in combat: play the death when the unit leaves the game
 var founding := false   # founded a city: play "build" when the unit leaves the game
+var _hit_delay := STRIKE_DELAY   # the last attack on this unit: its start to the blow landing
 var _tween: Tween
 var _badges: _Badges
 
@@ -90,13 +91,24 @@ func lunge(toward: Vector2) -> void:
 	_tween.tween_property(self, "position", home, 0.12)
 
 
+## A ranged attack toward `toward` (world position): a figure turns to it and plays its attack.
+## Returns the seconds until the shot leaves (the sheet's "release" mark; 0 for a token).
+func shoot(toward: Vector2) -> float:
+	if sprite == null:
+		return 0.0
+	sprite.face(UnitSprite.direction_toward(toward - position))
+	sprite.act("attack")
+	return maxf(sprite.mark_time("attack", "release"), 0.0)
+
+
 ## Struck by an attack from `from` (world position): a figure turns toward it and flinches
-## when the blow lands.
-func struck(from: Vector2) -> void:
+## when the blow lands, `delay` seconds from now (a shot lands later than a melee blow).
+func struck(from: Vector2, delay: float = STRIKE_DELAY) -> void:
+	_hit_delay = delay
 	if sprite == null:
 		return
 	sprite.face(UnitSprite.direction_toward(from - position))
-	get_tree().create_timer(STRIKE_DELAY).timeout.connect(_flinch)
+	get_tree().create_timer(delay).timeout.connect(_flinch)
 
 
 func _flinch() -> void:
@@ -129,7 +141,7 @@ func remove(animated: bool) -> void:
 	_badges.hide()
 	get_parent().move_child(self, 0)   # the body lies under anyone who steps onto the hex
 	var t := create_tween()
-	t.tween_interval(STRIKE_DELAY)
+	t.tween_interval(_hit_delay)
 	t.tween_callback(sprite.act.bind("death"))
 	t.tween_interval(BODY_TIME)
 	t.tween_property(self, "modulate:a", 0.0, FADE_TIME)

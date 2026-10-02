@@ -1,0 +1,53 @@
+{
+ "sheet": "archer.png",
+ "mask": "archer_mask.png",
+ "cell": [
+  160,
+  176
+ ],
+ "columns": 16,
+ "fps": 12,
+ "anchor": [
+  80.0,
+  130.2
+ ],
+ "directions": [
+  "e",
+  "ne",
+  "nw",
+  "w",
+  "sw",
+  "se"
+ ],
+ "animations": {
+  "idle": {
+   "first": 0,
+   "frames": 12,
+   "loop": true
+  },
+  "walk": {
+   "first": 72,
+   "frames": 8,
+   "loop": true
+  },
+  "attack": {
+   "first": 120,
+   "frames": 12,
+   "loop": false,
+   "marks": {
+    "release": 7
+   }
+  },
+  "hit": {
+   "first": 192,
+   "frames": 5,
+   "loop": false
+  },
+  "death": {
+   "first": 222,
+   "frames": 8,
+   "loop": false
+  }
+ },
+ "note": "Cell index = first + direction * frames + frame. Directions follow Hex.DIRECTIONS."
+}

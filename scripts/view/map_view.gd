@@ -3,6 +3,8 @@ extends Node2D
 ## Renders the GameState from one player's point of view. It never changes the game;
 ## sync() reconciles the scene with the state, and game signals trigger animations.
 
+const PROJECTILE_TIME := 0.22       # a ranged shot's flight from tile to tile
+
 var game: Game
 var viewer: Player
 var reveal_all := false
@@ -223,38 +225,47 @@ func _on_combat(info: Dictionary) -> void:
 		return
 	var to_pos := Hex.to_pixel(target)
 	var from_pos := Hex.to_pixel(from)
+	var attacker: UnitView = _unit_views.get(info.get("attacker_unit_id", -1))
+	var hit_delay := UnitView.STRIKE_DELAY
 	if info.ranged:
-		_projectile(from_pos, to_pos)
-	elif info.has("attacker_unit_id"):
-		var v: UnitView = _unit_views.get(info.attacker_unit_id)
-		if v != null:
-			v.lunge(to_pos)
+		# A figure draws or winds up first; the shot leaves on its "release" mark.
+		var release := attacker.shoot(to_pos) if attacker != null else 0.0
+		_projectile(from_pos, to_pos, release)
+		hit_delay = release + PROJECTILE_TIME
+	elif attacker != null:
+		attacker.lunge(to_pos)
 	if info.get("defender_kind", "") == "unit":
 		var d: UnitView = _unit_views.get(info.defender_unit_id)
 		if d != null:
 			d.dying = int(info.defender_hp) <= 0
-			d.struck(from_pos)
+			d.struck(from_pos, hit_delay)
 	if info.has("attacker_unit_id") and int(info.get("attacker_hp", 1)) <= 0:
 		var a: UnitView = _unit_views.get(info.attacker_unit_id)
 		if a != null:
 			a.dying = true
-	float_text(to_pos + Vector2(0, -30), "-%d" % info.to_defender, UITheme.BAD)
+	# A shot's damage shows when it lands; a melee blow's at once.
+	float_text(to_pos + Vector2(0, -30), "-%d" % info.to_defender, UITheme.BAD, hit_delay if info.ranged else 0.0)
 	if int(info.get("to_attacker", 0)) > 0:
 		float_text(from_pos + Vector2(0, -30), "-%d" % info.to_attacker, Color("#ffb35e"))
 
 
-func _projectile(from_pos: Vector2, to_pos: Vector2) -> void:
+## A shot flying from one tile to another, leaving after `delay` seconds.
+func _projectile(from_pos: Vector2, to_pos: Vector2, delay: float = 0.0) -> void:
 	var dot := Polygon2D.new()
 	dot.polygon = PackedVector2Array([Vector2(-5, -5), Vector2(5, -5), Vector2(5, 5), Vector2(-5, 5)])
 	dot.color = Color(1, 0.9, 0.6)
 	dot.position = from_pos
+	dot.visible = delay <= 0.0
 	effects.add_child(dot)
 	var t := dot.create_tween()
-	t.tween_property(dot, "position", to_pos, 0.22)
+	if delay > 0.0:
+		t.tween_interval(delay)
+		t.tween_callback(dot.show)
+	t.tween_property(dot, "position", to_pos, PROJECTILE_TIME)
 	t.tween_callback(dot.queue_free)
 
 
-func float_text(pos: Vector2, text: String, color: Color) -> void:
+func float_text(pos: Vector2, text: String, color: Color, delay: float = 0.0) -> void:
 	var l := Label.new()
 	l.text = text
 	l.add_theme_font_override("font", Tex.font())
@@ -263,8 +274,12 @@ func float_text(pos: Vector2, text: String, color: Color) -> void:
 	l.add_theme_color_override("font_outline_color", Color.BLACK)
 	l.add_theme_constant_override("outline_size", 8)
 	l.position = pos - Vector2(24, 20)
+	l.visible = delay <= 0.0
 	effects.add_child(l)
 	var t := l.create_tween()
+	if delay > 0.0:
+		t.tween_interval(delay)
+		t.tween_callback(l.show)   # the parallel steps below join this one
 	t.set_parallel(true)
 	t.tween_property(l, "position:y", l.position.y - 50, 1.0)
 	t.tween_property(l, "modulate:a", 0.0, 1.0).set_delay(0.4)

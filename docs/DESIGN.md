@@ -67,12 +67,15 @@ The map draws sprite sheets, and units without a sheet fall back to a coloured t
 ## 2. How the pipeline fits together
 
 ```
-art/lib/spritekit.py   materials, meshes, Body, rig, posing, ropes, camera, render, sheet assembly
-art/lib/humanoid.py    base person: bones, outfit-dressed body, STAND, breathe, walk_legs, walk
-art/lib/quadruped.py   base four-legged animal from a proportions table (DONKEY), halter, pack saddle,
-                       stand_idle, walk
-art/lib/gear.py        reusable kit: pauldron, helmet, sword, round_shield, brimmed_hat, hood, cloak,
-                       pouch, staff, mallet, dust_puff
+art/lib/spritekit.py   materials, meshes, Body, rig, posing, solve, ropes, cords, camera, render,
+                       sheet assembly
+art/lib/humanoid.py    base person: bones, outfit-dressed body, STAND, RIDE, breathe, walk_legs, walk,
+                       arm, reach
+art/lib/quadruped.py   base four-legged animal from a proportions table (DONKEY, HORSE), halter,
+                       pack saddle, riding saddle, stand_idle, walk
+art/lib/gear.py        reusable kit: pauldron, helmet, sword, round_shield, great_helm, greatsword,
+                       pointed_helmet, spear, tall_shield, cowl, quiver, bow, arrow, brimmed_hat,
+                       hood, cloak, pouch, staff, mallet, dust_puff
 art/<unit>/build_<unit>.py   only what is unique to that unit, ends with sk.build(...)
         |
         |  E:\Blender\blender.exe -b --factory-startup --python art/<unit>/build_<unit>.py
@@ -118,6 +121,15 @@ the unit is drawn as a figure everywhere.
   - `between(obj, a, b)` points a Z-built cylinder from a to b.
 
   Then call `body.add(obj, bone)`.
+- **A rider:** build the mount, `moved()` it with its prefix, then move the rider so its hips sit
+  on the saddle (`quadruped.riding_saddle` returns the seat point) and set its root's parent to the
+  mount's body: `rider.bones["root"] = (head, tail, "horse.body")`. Merge the rider *into* the mount
+  (`horse.merge(rider)`) so the parent bone is created first. The rider's poses (`humanoid.RIDE`
+  for the legs) then move only the person; the mount's walk, rear or fall carries it. See
+  `art/horseman/build_horseman.py`.
+- **A machine:** a custom `sk.Body` bone table (`root`, a chassis bone, the moving parts as its
+  children: wheels with their bone along the axle so `swing` rolls them, a throwing arm with its
+  head on the pivot). See `art/catapult/build_catapult.py`.
 - **Several actors in one rig:**
   - Build each actor at its own origin.
   - Move the second actor with `actor.moved(offset, prefix="donkey.", scale=…)`.
@@ -165,10 +177,21 @@ with `sk.pose(rot, loc, show)`.
   Use this for a tool that moves from the belt to the hand, or a dust puff on an impact frame.
 - **Ropes:** `sk.Rope(name, marker_a, marker_b, slack=…)` connects two `sk.marker` empties parented
   to bones. It re-hangs after every pose.
+- **Cords:** `sk.Cord(name, a, b, pull_to)` is a taut string between two markers (a bow string). A
+  pose's `"pull"` for it (`sk.pose(rot, loc, pull={name: 0..1})`, blended by `keyed`) draws its
+  middle toward the marker `pull_to` (the drawing hand). See `art/archer/build_archer.py`.
 - **Fitting to the ground:** `sk.posed_point(bones, pose, bone, rest_point)` returns where a rest-pose
   point ends up in a pose. It is pure maths and runs before anything renders. Use it to solve angles
   so a tool tip, a staff foot or a hoof touches z ≈ 0. See `_fit_strike()` in the settler, which
   searches an arm angle for a target height. Use it instead of guessing angles and re-rendering.
+- **Fitting an arm:** `humanoid.reach(pose, side, target, item, axis)` solves one arm's five angles
+  so the fist lands on `target` and, given a held item's rest-pose direction (`item`), so the item
+  points along `axis`. It returns the pose with that arm replaced and the remaining error; print the
+  error from `model()`. Use it for anything held at an angle (a spear thrust, a sword cut, a bow
+  held upright), for the second hand on a two-handed grip (fit it to a point on the grip), and for
+  a weapon lying flat beside a fallen body. Gear that must stand at an angle in one pose is modelled
+  for that pose (`gear.held_axis`, `gear.spear`, `gear.bow`) and its rest-pose axis returned for
+  fitting the other poses.
 - **Pose functions:** each animation is `f(i, n, yaw) -> pose` for frame `i` of `n`. `yaw` is the
   facing. Most functions ignore it; the warrior's death uses it so the body falls across the screen
   in every facing (`fall_spin`).
@@ -201,7 +224,7 @@ Roles the game plays. Times are at 12 fps.
 |---|---|---|---|---|
 | `idle` | everyone | 12–16 | yes | Default. Must loop seamlessly: use `wave`/`pulse` with whole cycles. |
 | `walk` | everyone | 8 | yes | One full stride (both legs). The figure moves 0.7 s per hex (`UnitView.SPRITE_STEP_TIME`), about one cycle per hex. |
-| `attack` | units that fight | ~9 | no | Melee: the view lunges and the defender flinches at `STRIKE_DELAY` = 0.3 s, so **the blow must land around frame 4**. Afterwards it returns to idle. |
+| `attack` | units that fight | ~9 | no | Melee: the view lunges and the defender flinches at `STRIKE_DELAY` = 0.3 s, so **the blow must land around frame 4**. Ranged: mark the frame the shot leaves as `"release"`; the projectile leaves then and the target flinches when it lands. Afterwards it returns to idle. |
 | `hit` | units that fight | ~5 | no | A recoil. The shader adds a white flash. Afterwards it returns to idle. |
 | `death` | units that fight | ~8 | no | Holds the last frame. The body lies 1.8 s and then fades. End lying flat, inside the cell, in every facing. |
 | `build` | settlers (optional) | 24 | no | Played when founding a city. The `"strike"` mark is when the city, borders and cleared tile appear. |
@@ -322,9 +345,7 @@ Run it in the background if needed. Then check the sheet:
 This runs `--import` first. `test_unit_sprite_sheets` automatically checks the new sheet: roles for
 its class, six facings, frames in bounds, and the mask matching the sheet.
 
-**If the new unit is `archer`:** update `test_unit_views_use_sprite_sheets` in `tests/test_data.gd`.
-It uses `archer` as its example of a unit *without* a sheet. Switch that to another unit that still
-has no sheet.
+A ranged unit's sheet must mark its `"release"`; `test_ranged_sheets_mark_their_release` checks it.
 
 ### Step 6 — Look at it in Godot
 
@@ -376,15 +397,10 @@ The way to keep this true when extending the library:
 None are needed for a melee or mounted unit with the five standard roles. Code is needed in these
 cases:
 
-- **Ranged units** (archer, catapult):
-  - The current state: `MapView._on_combat` only draws a flying dot (`_projectile`) for ranged
-    attacks. The attacker's sprite does not turn or play `attack`.
-  - The fix, in `_on_combat`:
-    1. If the attacker's view has a sprite, face the target and `act("attack")`.
-    2. Launch the projectile at a `"release"` mark in the attack (`mark_time("attack", "release")`)
-       instead of immediately.
-    3. Delay the defender's `struck()` by the release time plus the flight time.
-  - Keep the timing in marks, not constants.
+- **Ranged units** (archer, catapult) are wired: `MapView._on_combat` calls `UnitView.shoot`, which
+  faces the target, plays `attack` and returns the `"release"` mark's time; the projectile leaves
+  then, and the defender's `struck(from, delay)` (and its death, if it was killed) waits for the
+  release plus `MapView.PROJECTILE_TIME`. A new ranged unit only needs the mark.
 - **A new role** (e.g. `build` for workers improving a tile):
   1. Add it to `UnitSprite.EXTRA_ROLES`.
   2. Play it from `UnitView`, driven by a `Game` signal that `MapView` connects to.
@@ -491,6 +507,21 @@ for name in ("<unit>_mask.png", "<unit>.png"):
   slashes or raw strings.
 - **Don't edit generated files by hand** (sheets, masks, JSON). Change the script and rebuild. The
   `.import` files are written once and then kept, so Godot's compression settings survive rebuilds.
+- **EEVEE's shadow pipeline runs even when no light casts shadows.** `setup_scene` turns it off
+  (`scene.eevee.use_shadows = False`): the same pixels, about five times faster per frame on a
+  software renderer.
+- **The arm solver has local minima.** `humanoid.reach` restarts from several natural arm poses
+  and keeps the best fit. If an error stays high (more than about 0.1), the target is out of reach
+  or fights the item's axis: move the target or give the solver a better `guess`.
+- **A body lying toward or away from the camera looks like it is still standing**, because the
+  camera looks down at 40°. Every fall must end across the screen: the warrior and the foot units
+  spin with `fall_spin`; the horse turns as it rolls so the rider lands across the screen.
+- **Long weapons need wide cells.** A spear thrust or a lying spear runs about 1.6 units from the
+  feet in the east and west facings. The spearman and swordsman use 208-pixel-wide cells; angle a
+  thrust down a little rather than growing the cell further.
+- **Big heads dwarf true-scale mounts and machines.** Beside the chunky humanoid a horse or a
+  catapult at real proportions looks like a toy. Both are scaled 1.3 with `Body.moved(..., scale=)`;
+  scale every distance in their poses (`leg_len`, fall offsets) with them.
 
 ---
 
@@ -502,31 +533,38 @@ Library inventory (see the docstrings for parameters):
   - Bones: `BONES`.
   - Landmarks: `HAND`, `SHOULDER`, `HEAD_CENTER`, `HEAD_TOP`, `FACE_FRONT`.
   - Body: `body(outfit, shoulders)`, `arm_rotation`.
-  - Motion: `STAND`, `breathe`, `walk_legs`, `walk`.
+  - Motion: `STAND`, `RIDE` (seated on a mount), `breathe`, `walk_legs`, `walk`.
+  - Fitting: `arm(side, ...)` (the five arm angles), `reach` (fist and held item to a target).
 - **`gear`:**
   - Warrior kit: `pauldron`, `helmet(crest)`, `sword`, `round_shield(face)`.
+  - Swordsman kit: `great_helm`, `greatsword` (returns its blade axis and the second hand's grip).
+  - Spearman kit: `pointed_helmet`, `spear` (planted for a given pose), `tall_shield`, `held_axis`.
+  - Archer kit: `cowl`, `quiver`, `bow` (upright for a given pose, with markers for a Cord string),
+    `arrow` (nocked for a given pose; toggle it).
   - Clothing: `brimmed_hat`, `hood`, `cloak`, `pouch`.
   - Tools: `staff` (planted for a given pose), `mallet` (hand or belt) and `mallet_head`.
   - Effects: `dust_puff`.
 - **`quadruped`:**
-  - Body: `DONKEY` proportions, `bones(d)`, `body(d)`.
-  - Kit: `halter` (returns the rope tie marker), `saddle_cloth`, `pack_saddle`.
-  - Motion: `stand_idle`, `walk`.
-- **`spritekit`:** see section 3.
+  - Body: `DONKEY` and `HORSE` proportions (optional keys: knee height, leg thickness, neck, mane,
+    tail, sock colour), `bones(d)`, `body(d)`.
+  - Kit: `halter` (returns the rope tie marker), `saddle_cloth`, `pack_saddle`, `riding_saddle`
+    (returns the seat point).
+  - Motion: `stand_idle`, `walk` (pass a bigger `stride` and `knee` for a trot).
+- **`spritekit`:** see section 3 (`solve` is the small optimiser behind `reach`; `Cord` is a taut
+  string).
 
-Units still drawn as tokens, and the library pieces each would add. These are suggestions, not
-decisions:
+Every unit in `data/units.json` now has a sheet:
 
-| Unit | Class | Likely new library pieces | Game-side work |
+| Unit | Class | Built from | Notes |
 |---|---|---|---|
-| archer | ranged | `gear.bow`, `gear.quiver`; draw-and-release attack with a `"release"` mark | ranged wiring (section 6), test example swap (step 5) |
-| spearman | melee | `gear.spear`; reuse `round_shield` or add a tall shield; thrust attack | none |
-| swordsman | melee | heavier armour (a helmet variant with face guard, mail chest colour); reuse `sword` | none |
-| horseman | mounted | a `HORSE` proportions preset in `quadruped` (longer legs and neck, smaller ears), a trot or gallop cycle, a seated rider pose in `humanoid` | probably a bigger cell and `base` |
-| catapult | siege | a machine `sk.Body` (frame, throwing arm, wheels), maybe a crew humanoid beside it | ranged wiring |
+| warrior | melee | humanoid, warrior kit | |
+| settler | civilian | humanoid, quadruped (donkey), rope | `build` role with a `"strike"` mark |
+| spearman | melee | humanoid, spearman kit | overhand thrust fitted with `reach` |
+| swordsman | melee | humanoid, swordsman kit | both hands fitted to the grip in every key pose |
+| archer | ranged | humanoid, archer kit, `Cord` string | `"release"` mark |
+| horseman | mounted | quadruped (horse, scaled 1.3), humanoid rider parented to `horse.body` | trot, rear on attack, rolls over on death |
+| catapult | siege | custom engine `sk.Body` (scaled 1.3), humanoid crewman with a mallet | `"release"` mark; wheels roll a quarter turn per stride |
 
-**Riders.** For a rider, the rider's `root` must follow the mount's body. The intended approach is to
-merge the mount first, then edit the rider's bone table so its root's parent is the mount's prefixed
-body bone, e.g. `rider.bones["root"] = (head, tail, "horse.body")`, before `build_rig`.
-`build_rig` creates bones in table order, so the parent must come first. This hasn't been built yet;
-verify it with a render.
+A new unit that looks like one of these should start from its script. A new mount (an elephant, a
+camel) is a new proportions table in `quadruped` plus the horseman's rider setup; a new machine
+(a ram, a ballista) follows the catapult.

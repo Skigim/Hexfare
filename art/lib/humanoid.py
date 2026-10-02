@@ -88,6 +88,45 @@ def arm_rotation(rot, side):
     return sk.chain(rot, [b % side if "%" in b else b for b in ARM])
 
 
+def arm(side, upper_swing, upper_raise, upper_turn=0.0, fore_swing=0.0, fore_turn=0.0):
+    """The two rotations of one arm from five angles (degrees), in the order humanoid.reach fits
+    them: {upperarm: swing @ raise_ @ turn, forearm: swing @ turn}."""
+    return {"upperarm." + side: swing(upper_swing) @ raise_(side, upper_raise) @ turn(upper_turn),
+            "forearm." + side: swing(fore_swing) @ turn(fore_turn)}
+
+
+def reach(p, side, target, item=None, axis=None, guess=(20, 10, 0, 40, 0), weight=0.25):
+    """Fits one arm in pose p (an sk.pose; its other bones stay) so the fist lands on `target`
+    (armature space) and, given `item` (a rest-pose direction riding that forearm, e.g. a spear's
+    shaft) and `axis`, so the item points along `axis`. Elbows only bend the natural way.
+    Starts from `guess` and a few natural arm poses and keeps the best fit, preferring little
+    twist. Returns (pose with the arm replaced, error: distance plus weighted angle in radians)."""
+    target = Vector(target)
+    axis = Vector(axis).normalized() if axis is not None else None
+
+    def posed(a):
+        q = dict(p["rot"])
+        q.update(arm(side, *a))
+        return sk.pose(q, p["loc"], p.get("show"), p.get("pull"))
+
+    def error(a):
+        pp = posed(a)
+        err = (sk.posed_point(BONES, pp, "forearm." + side, HAND[side]) - target).length
+        if axis is not None:
+            d = arm_rotation(pp["rot"], side) @ Vector(item)
+            err += weight * d.angle(axis, 0.0)
+        return err
+
+    def cost(a):
+        if not 0.0 <= a[3] <= 150.0:
+            return 1e9
+        return error(a) + 3e-6 * (a[2] * a[2] + a[4] * a[4]) + 1e-8 * sum(v * v for v in a)
+
+    starts = [tuple(guess)] + [(s, r, 0, f, 0) for s in (0, 70, 140) for r in (10, 60) for f in (20, 90)]
+    a = min((sk.solve(cost, s) for s in starts), key=lambda fit: fit[1])[0]
+    return posed(a), error(a)
+
+
 # --------------------------------------------------------------------------- shared motion
 
 # A relaxed stance to start a unit's own poses from: arms a little out and bent, feet apart.
@@ -96,6 +135,14 @@ STAND = {
     "upperarm.L": swing(4) @ raise_("L", 7), "forearm.L": swing(12),
     "thigh.R": swing(-2) @ raise_("R", 4), "thigh.L": swing(3) @ raise_("L", 4),
     "shin.R": swing(-3), "shin.L": swing(-4),
+}
+
+
+# Sitting astride a mount: thighs forward and spread round its barrel, shins hanging down its
+# sides. Put the rider's hips on the seat (see build_horseman.py).
+RIDE = {
+    "thigh.R": swing(72) @ raise_("R", 30), "shin.R": swing(-78),
+    "thigh.L": swing(72) @ raise_("L", 30), "shin.L": swing(-78),
 }
 
 

@@ -292,9 +292,10 @@ def turn(deg):
     return quat(Z, deg)
 
 
-def pose(rot=None, loc=None, show=None):
+def pose(rot=None, loc=None, show=None, pull=None):
+    """pull: {cord name: 0..1}, how far each Cord (a bow string) is drawn toward its pulling marker."""
     return {"rot": dict(rot or {}), "loc": {k: Vector(v) for k, v in (loc or {}).items()},
-            "show": dict(show or {})}
+            "show": dict(show or {}), "pull": dict(pull or {})}
 
 
 def merge(*poses):
@@ -304,6 +305,7 @@ def merge(*poses):
         out["rot"].update(p["rot"])
         out["loc"].update(p["loc"])
         out["show"].update(p.get("show", {}))
+        out["pull"].update(p.get("pull", {}))
     return out
 
 
@@ -328,7 +330,7 @@ def prefixed(p, prefix):
     """Puts a pose on a prefixed actor's bones (object names in "show" are left alone)."""
     return {"rot": {prefix + k: v for k, v in p["rot"].items()},
             "loc": {prefix + k: v for k, v in p["loc"].items()},
-            "show": dict(p.get("show", {}))}
+            "show": dict(p.get("show", {})), "pull": dict(p.get("pull", {}))}
 
 
 def chain(rot, bones):
@@ -356,6 +358,27 @@ def posed_point(bones, p, bone, point):
     return m @ Vector(point)
 
 
+def solve(cost, start, step=16.0, tol=0.1):
+    """Minimises cost(params) from `start` by pattern search (each parameter nudged up and down,
+    the step halving when nothing improves): for fitting a few pose angles to a target, e.g.
+    humanoid.reach. Returns (params, cost)."""
+    x = list(start)
+    best = cost(x)
+    while step > tol:
+        improved = False
+        for k in range(len(x)):
+            for d in (step, -step):
+                y = list(x)
+                y[k] += d
+                c = cost(y)
+                if c < best:
+                    x, best, improved = y, c, True
+                    break
+        if not improved:
+            step *= 0.5
+    return x, best
+
+
 def keyed(i, keys):
     """Interpolates between (frame, pose) keys with ease-in-out."""
     for (f0, a), (f1, b) in zip(keys, keys[1:]):
@@ -372,7 +395,9 @@ def blend(a, b, t):
     loc = {}
     for bone in set(a["loc"]) | set(b["loc"]):
         loc[bone] = a["loc"].get(bone, Vector()).lerp(b["loc"].get(bone, Vector()), t)
-    return {"rot": rot, "loc": loc, "show": dict((a if t < 0.5 else b).get("show", {}))}
+    pa, pb = a.get("pull", {}), b.get("pull", {})
+    pull = {k: pa.get(k, 0.0) + (pb.get(k, 0.0) - pa.get(k, 0.0)) * t for k in set(pa) | set(pb)}
+    return {"rot": rot, "loc": loc, "show": dict((a if t < 0.5 else b).get("show", {})), "pull": pull}
 
 
 def wave(i, n, cycles=1, phase=0.0):
@@ -397,7 +422,7 @@ def apply_pose(rig, p):
         obj = bpy.data.objects[name]
         obj.hide_render = obj.hide_viewport = not p.get("show", {}).get(name, shown)
     for rope in ROPES:
-        rope.update()
+        rope.update(p)
 
 
 # --------------------------------------------------------------------------- ropes
@@ -422,7 +447,7 @@ class Rope:
         bpy.context.scene.collection.objects.link(self.obj)
         ROPES.append(self)
 
-    def update(self):
+    def update(self, _pose=None):
         bpy.context.view_layer.update()
         a = self.start.matrix_world.translation
         b = self.end.matrix_world.translation
@@ -431,6 +456,34 @@ class Rope:
             p = a.lerp(b, t)
             p.z = max(0.01, p.z - self.slack * 4 * t * (1 - t))
             point.co = (p.x, p.y, p.z, 1)
+
+
+class Cord:
+    """A taut string (a bow string) from marker `a` to marker `b`, re-strung after every pose. A
+    pose's "pull" for it (0..1) draws its middle from the straight line toward the marker
+    `pull_to` (the drawing hand)."""
+
+    def __init__(self, name, a, b, pull_to, mat="linen", radius=0.007):
+        self.name, self.a, self.b, self.pull_to = name, a, b, pull_to
+        curve = bpy.data.curves.new(name, "CURVE")
+        curve.dimensions = "3D"
+        curve.bevel_depth = radius
+        curve.bevel_resolution = 1
+        curve.materials.append(material(mat))
+        self.spline = curve.splines.new("POLY")
+        self.spline.points.add(2)
+        self.obj = bpy.data.objects.new(name, curve)
+        bpy.context.scene.collection.objects.link(self.obj)
+        ROPES.append(self)
+
+    def update(self, p=None):
+        bpy.context.view_layer.update()
+        a = self.a.matrix_world.translation
+        b = self.b.matrix_world.translation
+        t = (p or {}).get("pull", {}).get(self.name, 0.0)
+        mid = ((a + b) / 2).lerp(self.pull_to.matrix_world.translation, t)
+        for point, co in zip(self.spline.points, (a, mid, b)):
+            point.co = (co.x, co.y, co.z, 1)
 
 
 # --------------------------------------------------------------------------- camera and render
@@ -455,6 +508,7 @@ def setup_scene(cell, anchor):
     scene.view_settings.view_transform = "Standard"
     scene.view_settings.look = "None"
     scene.eevee.taa_render_samples = 16
+    scene.eevee.use_shadows = False   # no light casts shadows: the same pixels, several times faster
 
     cam_data = bpy.data.cameras.new("camera")
     cam_data.type = "ORTHO"

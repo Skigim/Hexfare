@@ -16,15 +16,30 @@ sk.COLORS.update({
     "donkey": (0.6, 0.55, 0.52), "donkey_light": (0.92, 0.89, 0.84), "donkey_dark": (0.3, 0.26, 0.25),
     "donkey_inner": (0.76, 0.71, 0.68),
     "hoof": (0.22, 0.2, 0.19),
+    "horse": (0.58, 0.38, 0.24), "horse_light": (0.76, 0.6, 0.45), "horse_dark": (0.2, 0.14, 0.11),
+    "horse_inner": (0.7, 0.52, 0.42), "horse_sock": (0.93, 0.9, 0.84),
 })
 
 # Proportions (world units; the humanoid is about 1.5 tall) and coat colours. A chunky,
-# toy-like donkey: big head, long ears, short legs.
+# toy-like donkey: big head, long ears, short legs. Optional keys (with the donkey's values as
+# defaults): "knee" height, "leg_r" leg thickness, "neck_r", "mane" (width, height), "tail_r",
+# "tuft" (radius, stretch), "tail_mat" and "shin" materials.
 DONKEY = {
     "barrel": (0.19, 0.41, 0.2), "barrel_z": 0.6, "front_y": -0.25, "hind_y": 0.27, "leg_x": 0.1,
     "neck": ((0, -0.3, 0.68), (0, -0.42, 0.93)), "head_len": 0.3, "head_dir": (0, -0.26, -0.1),
     "head_size": (0.17, 0.34, 0.19), "ear_len": 0.3, "tail": ((0, 0.42, 0.68), (0, 0.47, 0.4)),
     "coat": "donkey", "light": "donkey_light", "dark": "donkey_dark", "inner": "donkey_inner", "hoof": "hoof",
+}
+
+# A riding horse: longer legs and neck, small ears, a full mane and tail, white socks.
+HORSE = {
+    "barrel": (0.22, 0.48, 0.23), "barrel_z": 0.84, "front_y": -0.3, "hind_y": 0.32, "leg_x": 0.11,
+    "knee": 0.36, "leg_r": 1.25, "neck_r": (0.13, 0.1), "mane": (0.05, 0.1),
+    "neck": ((0, -0.36, 0.95), (0, -0.54, 1.27)), "head_len": 0.34, "head_dir": (0, -0.26, -0.17),
+    "head_size": (0.17, 0.42, 0.2), "ear_len": 0.15, "tail": ((0, 0.5, 0.93), (0, 0.66, 0.5)),
+    "tail_r": (0.07, 0.06), "tuft": (0.085, 2.4), "tail_mat": "horse_dark",
+    "coat": "horse", "light": "horse_light", "dark": "horse_dark", "inner": "horse_inner", "hoof": "hoof",
+    "shin": "horse_sock",
 }
 
 SIDES = (("R", -1), ("L", 1))
@@ -49,7 +64,7 @@ def bones(d):
     for leg, sx, key in LEGS:
         x, y = sx * d["leg_x"], d[key]
         hind = leg[0] == "H"
-        top, knee = z - 0.06 + (0.03 if hind else 0), 0.28
+        top, knee = z - 0.06 + (0.03 if hind else 0), d.get("knee", 0.28)
         out["leg." + leg] = ((x, y, top), (x, y + (0.02 if hind else 0), knee), "body")
         out["shin." + leg] = ((x, y + (0.02 if hind else 0), knee), (x, y, 0.03), "leg." + leg)
     return out
@@ -64,10 +79,12 @@ def body(d=DONKEY):
     b.add(at(make_mesh("belly", sphere(1.0, sx=rx * 0.88, sy=ry * 0.8, sz=rz * 0.75, segments=14), light, smooth=True), 0, 0.0, z - 0.07), "body")
 
     neck_a, neck_b = (Vector(v) for v in d["neck"])
-    b.add(between(make_mesh("neck", cylinder(0.105, 0.085, (neck_b - neck_a).length + 0.1, 10), coat, smooth=True),
+    neck_r = d.get("neck_r", (0.105, 0.085))
+    b.add(between(make_mesh("neck", cylinder(neck_r[0], neck_r[1], (neck_b - neck_a).length + 0.1, 10), coat, smooth=True),
                   neck_a - (neck_b - neck_a).normalized() * 0.05, neck_b + (neck_b - neck_a).normalized() * 0.05), "neck")
     back = Vector((0, 0.065, 0.03))   # the mane runs along the back of the neck
-    b.add(between(make_mesh("mane", box(0.04, 0.05, (neck_b - neck_a).length + 0.06), dark, bevel=0.015),
+    mane_w, mane_h = d.get("mane", (0.04, 0.05))
+    b.add(between(make_mesh("mane", box(mane_w, mane_h, (neck_b - neck_a).length + 0.06), dark, bevel=0.015),
                   neck_a + back, neck_b + back + Vector((0, 0, 0.05)), roll_x=X), "neck")
 
     hd = Vector(d["head_dir"]).normalized()
@@ -97,16 +114,18 @@ def body(d=DONKEY):
     b.add(at(make_mesh("forelock", box(0.06, 0.05, 0.05), dark, bevel=0.015), *(neck_b + Vector((0, -0.02, 0.09)))), "head")
 
     tail_a, tail_b = (Vector(v) for v in d["tail"])
-    b.add(between(make_mesh("tail", cylinder(0.03, 0.018, (tail_b - tail_a).length, 6), coat, smooth=True), tail_a, tail_b), "tail")
-    b.add(at(make_mesh("tail_tuft", sphere(0.04, sz=1.9, segments=8), dark, smooth=True), *(tail_b + Vector((0, 0.005, -0.03)))), "tail")
+    tail_r, (tuft_r, tuft_sz) = d.get("tail_r", (0.03, 0.018)), d.get("tuft", (0.04, 1.9))
+    b.add(between(make_mesh("tail", cylinder(tail_r[0], tail_r[1], (tail_b - tail_a).length, 6), d.get("tail_mat", coat), smooth=True), tail_a, tail_b), "tail")
+    b.add(at(make_mesh("tail_tuft", sphere(tuft_r, sz=tuft_sz, segments=8), dark, smooth=True), *(tail_b + Vector((0, 0.005, -0.03)))), "tail")
 
+    k = d.get("leg_r", 1.0)   # leg thickness
     for leg, sx, key in LEGS:
         hind = leg[0] == "H"
         top, knee, foot = (Vector(v) for v in (b.bones["leg." + leg][0], b.bones["leg." + leg][1], b.bones["shin." + leg][1]))
-        upper = cylinder(0.05, 0.085 if hind else 0.065, (top - knee).length + 0.06, 8)
+        upper = cylinder(0.05 * k, (0.085 if hind else 0.065) * k, (top - knee).length + 0.06, 8)
         b.add(between(make_mesh("leg." + leg, upper, coat, smooth=True), knee - Vector((0, 0, 0.03)), top + Vector((0, 0, 0.03))), "leg." + leg)
-        b.add(between(make_mesh("shin." + leg, cylinder(0.038, 0.046, (knee - foot).length, 8), coat, smooth=True), foot, knee), "shin." + leg)
-        b.add(at(make_mesh("hoof." + leg, cylinder(0.05, 0.043, 0.06, 8), d["hoof"]), foot.x, foot.y - 0.01, 0.03), "shin." + leg)
+        b.add(between(make_mesh("shin." + leg, cylinder(0.038 * k, 0.046 * k, (knee - foot).length, 8), d.get("shin", coat), smooth=True), foot, knee), "shin." + leg)
+        b.add(at(make_mesh("hoof." + leg, cylinder(0.05 * k, 0.043 * k, 0.06, 8), d["hoof"]), foot.x, foot.y - 0.01, 0.03), "shin." + leg)
     return b
 
 
@@ -133,6 +152,24 @@ def saddle_cloth(b, d=DONKEY, mat="team", length=0.36):
     place(obj, Vector((0, -0.02, d["barrel_z"])), x_axis=X, z_axis=Y)
     obj.scale = (rx / rz + 0.04, 1, 1)
     return b.add(obj, "body")
+
+
+def riding_saddle(b, d=HORSE, cloth="team", mat="leather"):
+    """Saddle cloth, girth and a riding saddle with a raised pommel and cantle. Returns the
+    rest-pose point on the seat where a rider sits."""
+    rx, ry, rz = d["barrel"]
+    z = d["barrel_z"]
+    top = z + rz
+    saddle_cloth(b, d, cloth, length=0.46)
+    girth = make_mesh("girth", shell(1.0, 1.0, 0.05, keep=lambda co: True, segments=18), "dark_leather")
+    girth.scale = (rx + 0.016, rz + 0.016, 1)
+    between(girth, Vector((0, -0.12, z)), Vector((0, -0.07, z)), roll_x=X)
+    b.add(girth, "body")
+    seat = make_mesh("saddle_seat", sphere(1.0, sx=rx * 0.75, sy=0.2, sz=0.06, cut_below=-0.2, segments=14), mat, smooth=True)
+    b.add(at(seat, 0, -0.02, top + 0.0), "body")
+    for name, y, w in (("saddle_pommel", -0.19, 0.15), ("saddle_cantle", 0.16, 0.2)):
+        b.add(at(make_mesh(name, box(w, 0.06, 0.1), "dark_leather", bevel=0.025), 0, y, top + 0.05), "body")
+    return Vector((0, -0.02, top + 0.05))
 
 
 def pack_saddle(b, d=DONKEY, cloth="team"):

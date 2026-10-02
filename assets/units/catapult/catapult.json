@@ -1,0 +1,57 @@
+{
+ "sheet": "catapult.png",
+ "mask": "catapult_mask.png",
+ "cell": [
+  208,
+  216
+ ],
+ "columns": 16,
+ "fps": 12,
+ "anchor": [
+  104.0,
+  151.2
+ ],
+ "directions": [
+  "e",
+  "ne",
+  "nw",
+  "w",
+  "sw",
+  "se"
+ ],
+ "animations": {
+  "idle": {
+   "first": 0,
+   "frames": 12,
+   "loop": true
+  },
+  "walk": {
+   "first": 72,
+   "frames": 8,
+   "loop": true
+  },
+  "attack": {
+   "first": 120,
+   "frames": 12,
+   "loop": false,
+   "marks": {
+    "release": 5
+   }
+  },
+  "hit": {
+   "first": 192,
+   "frames": 5,
+   "loop": false
+  },
+  "death": {
+   "first": 222,
+   "frames": 8,
+   "loop": false
+  }
+ },
+ "base": [
+  58,
+  23
+ ],
+ "note": "Cell index = first + direction * frames + frame. Directions follow Hex.DIRECTIONS."
+}
