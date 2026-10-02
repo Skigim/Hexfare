@@ -1,13 +1,16 @@
 """Builds the archer sprite in Blender: the base humanoid (art/lib/humanoid.py) in a team-coloured
-hood and jerkin with a quiver on the back and a longbow (art/lib/gear.py), rendered in the six hex
-facings by the shared pipeline (art/lib/spritekit.py).
+jerkin and a feathered cap, with a quiver on the back and a longbow (art/lib/gear.py), rendered in
+the six hex facings by the shared pipeline (art/lib/spritekit.py).
 
     blender -b --factory-startup --python art/archer/build_archer.py [-- --only=idle,attack]
 
-Writes art/archer/archer.blend and assets/units/archer/. The attack nocks, draws (the bow string
-is an sk.Cord pulled to the drawing hand) and looses; its "release" mark is the frame the arrow
-leaves, when the game launches the projectile. The bow is modelled upright for the full draw, and
-the arms of every key pose are fitted with humanoid.reach.
+Writes art/archer/archer.blend and assets/units/archer/. The shot is taken side-on: the bow arm
+straight out toward the target, the string (an sk.Cord pulled to the drawing hand) drawn back
+beside the jaw, so bow, string and arrow stay in one upright plane to the right of the head and
+clear of the body. The "release" mark is the frame the arrow leaves, when the game launches the
+projectile: the string snaps straight and the loosed arrow shows past the bow for that frame.
+The rig has no wrist, so the bow is modelled twice, toggled by pose: upright in the hand for the
+full draw (shown while the bow is up), and held at the side, string toward the body, at rest. The arms of every key pose are fitted with humanoid.reach.
 """
 import math
 import os
@@ -27,32 +30,55 @@ ANCHOR = 0.74
 
 sk.COLORS.update({"hose": (0.4, 0.42, 0.3), "jerkin": (0.55, 0.42, 0.28)})
 OUTFIT = {"boots": "dark_leather", "legs": "hose", "sleeves": "jerkin", "forearms": "leather",
-          "hips": "hose", "skirt": "jerkin", "chest": "team", "collar": None}
+          "hips": "hose", "skirt": "jerkin", "chest": "team", "collar": "jerkin"}
 
-AIM_X = 0.06              # the arrow flies along x = AIM_X, z = AIM_Z toward -Y (the target)
-AIM_Z = 1.08
+# The line of the shot: the arrow flies along x = AIM_X, z = AIM_Z toward -Y (the target), outside
+# the right of the head (0.21 wide each side of the centre) so the drawn string never crosses it.
+AIM_X = -0.29
+AIM_Z = 1.0
+BOW_Y = -0.48             # the bow hand, at arm's length toward the target
+DRAW_Y = -0.05            # the drawing hand at full draw, beside the jaw
 RELEASE = 7               # attack frame the arrow leaves
 ARROW_SHOWN = (3, RELEASE)  # nocked from this frame until the release
-STRING = "bow_string"
+LOOSED = 0.3              # how far the loosed arrow has flown on the release frame
+BOW_UP = (2, 10)          # attack frames the drawn bow is in the hand (the resting bow otherwise)
+STRING, REST_STRING = "bow_string", "bow_rest_string"
+REST_HAND = (0.34, -0.1, 0.68)   # the left hand at rest
+REST_UP = (0.15, -0.55, 1)       # the resting bow leans forward, its top showing from every side...
+REST_BACK = (0.57, -0.82, 0)     # ...its back turned out, the string in toward the body, clear of the arm
 
 FIT = {}       # key pose name -> fitted pose
-BOW = {}
+BOW = {}       # the drawn bow
+REST_BOW = {}  # the resting bow
 ARROW = []     # nocked arrow part names
+FLYING = []    # the loosed arrow's part names
 
 
 def model():
     b = humanoid.body(OUTFIT)
-    gear.cowl(b)
-    gear.hood(b)
+    gear.hair(b, topknot=False, top=False)
+    gear.feathered_cap(b)
     gear.quiver(b)
     fit_poses()
     draw = sk.pose(FIT["draw"])
     BOW.update(gear.bow(b, draw, "L"))
+    REST_BOW.update(gear.bow(b, sk.pose(FIT["rest"]), "L", aim=REST_BACK, up=REST_UP, name="bow_rest"))
+    for part in BOW["parts"]:
+        sk.toggle(part, False)
+    for part in REST_BOW["parts"]:
+        sk.toggle(part)
+    low = min(sk.posed_point(humanoid.BONES, sk.pose(FIT["rest"]), "forearm.L", tip).z for tip in REST_BOW["tips"])
+    print("archer: lowest bow tip at rest z=%.3f" % low)
     ARROW[:] = [sk.toggle(o, False).name for o in gear.arrow(b, draw, "R")]
-    fit_rest()
+    # The loosed arrow rides the root, modelled turned back so it lies on the line of the shot when
+    # the root turns into the stance.
+    back = AIM_BODY["root"].inverted()
+    nock = Vector((AIM_X, DRAW_Y - 0.02 - LOOSED, AIM_Z))
+    FLYING[:] = [sk.toggle(o, False).name for o in gear.loose_arrow(b, back @ nock, back @ Vector((0, -1, 0)), "root", name="arrow_loosed")]
     hand = b.add(sk.marker("draw_hand", humanoid.HAND["R"] + Vector((0, 0.03, 0))), "forearm.R")
     rig = sk.build_rig("archer", b)
-    sk.Cord(STRING, BOW["top"], BOW["bottom"], hand)
+    sk.toggle(sk.Cord(STRING, BOW["top"], BOW["bottom"], hand).obj, False)
+    sk.toggle(sk.Cord(REST_STRING, REST_BOW["top"], REST_BOW["bottom"], hand).obj)
     return rig
 
 
@@ -60,9 +86,9 @@ def model():
 
 # Shooting stance: side-on to the target, left shoulder leading, head turned to look along the arrow.
 AIM_BODY = dict(humanoid.STAND, **{
-    "root": turn(-48),
+    "root": turn(-65),
     "spine": lean(-2) @ turn(-10),
-    "head": lean(-2) @ turn(52),
+    "head": lean(-4) @ turn(70),
     "thigh.R": swing(-4) @ raise_("R", 12), "thigh.L": swing(4) @ raise_("L", 10),
 })
 REST_BODY = dict(humanoid.STAND, **{
@@ -79,20 +105,18 @@ def fit(name, rot, side, hand, guess, item=None, axis=None):
 
 
 def fit_poses():
-    """The draw: bow arm out along the line of the arrow, drawing hand at the chin."""
-    rot = fit("draw", AIM_BODY, "L", (AIM_X, -0.5, AIM_Z), (70, 30, 0, 10, 0))
-    FIT["draw"] = fit("draw", rot, "R", (AIM_X, -0.04, AIM_Z + 0.02), (60, 60, 0, 120, 0))
-    # Nocking, the arrow already lies along the line of the shot (gear.arrow models it for the draw).
+    """The draw: bow arm straight out along the line of the arrow, drawing hand beside the jaw."""
+    rot = fit("draw", AIM_BODY, "L", (AIM_X, BOW_Y, AIM_Z), (90, 20, 0, 5, 0))
+    FIT["draw"] = fit("draw", rot, "R", (AIM_X, DRAW_Y, AIM_Z), (70, 40, 0, 120, 0))
+    # Nocking: the hand brings the arrow up toward the string (from side-on it falls about 0.2
+    # short, hidden by the speed of the draw), already along the line of the shot (gear.arrow
+    # models it for the draw).
     arrow = humanoid.arm_rotation(FIT["draw"], "R").inverted() @ Vector((0, -1, 0))
-    FIT["nock"] = fit("nock", rot, "R", (AIM_X - 0.02, -0.3, AIM_Z), (70, 40, 0, 60, 0), arrow, (0, -1, 0))
-    FIT["loose"] = fit("loose", rot, "R", (AIM_X - 0.1, 0.12, AIM_Z + 0.06), (40, 70, 0, 130, 0))
-
-
-def fit_rest():
-    """At rest the bow hangs in the left hand, tilted forward, its lower tip clear of the ground."""
-    FIT["rest"] = fit("rest", REST_BODY, "L", (0.3, -0.12, 0.7), (10, 10, 0, 50, 0), BOW["up"], (0.2, -0.45, 1))
-    low = min(sk.posed_point(humanoid.BONES, sk.pose(FIT["rest"]), "forearm.L", tip).z for tip in BOW["tips"])
-    print("archer: lowest bow tip at rest z=%.3f" % low)
+    FIT["nock"] = fit("nock", rot, "R", (AIM_X, BOW_Y + 0.2, AIM_Z), (70, 30, 0, 60, 0), arrow, (0, -1, 0))
+    # Loosed: the drawing hand flies back past the ear.
+    FIT["loose"] = fit("loose", rot, "R", (AIM_X - 0.06, DRAW_Y + 0.14, AIM_Z + 0.08), (50, 60, 0, 130, 0))
+    # At rest the left hand holds the resting bow by the hip, its lower tip clear of the ground.
+    FIT["rest"] = fit("rest", REST_BODY, "L", REST_HAND, (10, 10, 0, 50, 0))
 
 
 def pose(rot, pull=0.0, **locs):
@@ -121,7 +145,12 @@ def attack(i, n, yaw=0.0):
     p = keyed(i, [(0, pose(FIT["rest"])), (2.5, pose(FIT["nock"])), (4.5, pose(FIT["draw"], 1.0)),
                   (RELEASE - 1, pose(FIT["draw"], 1.0)), (RELEASE, pose(FIT["loose"])),
                   (RELEASE + 1.5, pose(FIT["loose"])), (n - 1, pose(FIT["rest"]))])
+    up = BOW_UP[0] <= i < BOW_UP[1]
     p["show"] = {name: ARROW_SHOWN[0] <= i < ARROW_SHOWN[1] for name in ARROW}
+    p["show"].update({name: i == RELEASE for name in FLYING})
+    p["show"].update({o.name: up for o in BOW["parts"]})
+    p["show"].update({o.name: not up for o in REST_BOW["parts"]})
+    p["show"].update({STRING: up, REST_STRING: not up})
     return p
 
 
@@ -177,8 +206,10 @@ def death(i, n, yaw):
         side.z = 0
         hand = shoulder + side.normalized() * 0.3 - back * 0.2
         hand.z = 0.08
-        fitted, err = humanoid.reach(p, "L", hand, BOW["up"], back + Vector((0, 0, 0.03)), guess=(10, 70, 0, 10, 0))
-        low = min(sk.posed_point(humanoid.BONES, fitted, "forearm.L", tip).z for tip in BOW["tips"])
+        for _ in range(6):   # raise the hand until the bow rests on its tips on the ground
+            fitted, err = humanoid.reach(p, "L", hand, REST_BOW["up"], back + Vector((0, 0, 0.03)), guess=(10, 70, 0, 10, 0))
+            low = min(sk.posed_point(humanoid.BONES, fitted, "forearm.L", tip).z for tip in REST_BOW["tips"])
+            hand.z += 0.025 - low
         print("archer: lying bow fitted, error %.3f, lowest tip z=%.3f" % (err, low))
         _LYING[key] = pose(fitted["rot"], root=root)
     return keyed(i, [(0, pose(FIT["rest"])), (2, pose(buckle, hips=(0, 0, -0.13))),

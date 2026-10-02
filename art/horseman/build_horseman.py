@@ -1,4 +1,4 @@
-"""Builds the horseman sprite in Blender: a rider (the base humanoid with a crested helmet, a sword
+"""Builds the horseman sprite in Blender: a rider (the base humanoid with a crested helmet, a sabre
 and a short team-coloured cloak) on a horse (the base quadruped with the HORSE proportions and a
 riding saddle on a team-coloured cloth), holding the reins, rendered in the six hex facings by the
 shared pipeline (art/lib/spritekit.py).
@@ -46,7 +46,7 @@ def model():
 
     rider = humanoid.body(OUTFIT)
     gear.helmet(rider)
-    gear.sword(rider, "R")
+    gear.sabre(rider, "R")
     gear.cloak(rider, length=0.42)
     hand = rider.add(sk.marker("rein_hand", humanoid.HAND["L"]), "forearm.L")
     rider.moved(seat * HORSE_SCALE + Vector(HORSE_AT) - Vector((0, 0, 0.45)))
@@ -65,7 +65,8 @@ def model():
 SIT = dict(humanoid.RIDE, **{
     "spine": lean(4) @ turn(-4),
     "head": turn(6),
-    "upperarm.R": swing(18) @ raise_("R", 14), "forearm.R": swing(62),
+    # The sabre held up, sloped forward enough that its curve clears the helmet.
+    "upperarm.R": swing(18) @ raise_("R", 14), "forearm.R": swing(52),
     "upperarm.L": swing(26) @ raise_("L", 6), "forearm.L": swing(58),
 })
 WINDUP = dict(SIT, **{
