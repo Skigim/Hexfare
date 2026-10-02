@@ -106,7 +106,7 @@ def sabre(b, side="R", length=0.72, curve=0.16, width=(0.07, 0.085)):
     return centre(1.0) + across(1.0) * (wide(1.0) * 0.5)
 
 
-def round_shield(b, side="L", face="team", board="wood", boss="steel"):
+def round_shield(b, side="L", face="team"):
     """Centre-grip round shield: its face looks along the forearm, so when the forearm comes up
     in a guard the shield stands upright facing forward. Angled 30 degrees outward so its face
     still shows when the figure is seen in profile."""
@@ -115,9 +115,9 @@ def round_shield(b, side="L", face="team", board="wood", boss="steel"):
     normal = Vector((out * math.sin(math.radians(30)), 0, -math.cos(math.radians(30))))
     up = Vector((0, -1, 0))
     for name, build, mat, offset in (
-            ("shield_board", cylinder(0.27, 0.27, 0.045, 18), board, 0.05),
+            ("shield_board", cylinder(0.27, 0.27, 0.045, 18), "wood", 0.05),
             ("shield_face", cylinder(0.215, 0.215, 0.012, 18), face, 0.077),
-            ("shield_boss", sphere(0.075, cut_below=0.0), boss, 0.08)):
+            ("shield_boss", sphere(0.075, cut_below=0.0), "steel", 0.08)):
         obj = make_mesh(name, build, mat, smooth=name == "shield_boss")
         place(obj, fist + normal * offset, y_axis=up, z_axis=normal)
         b.add(obj, "forearm." + side)
@@ -158,53 +158,76 @@ def hair(b, mat="hair", topknot=True, top=True):
         b.add(at(make_mesh("topknot_tie", cylinder(0.05, 0.05, 0.035, 10), "dark_leather"), 0, 0.07, humanoid.HEAD_TOP + 0.005), "head")
 
 
-def headband(b, band="team", feathers=("feather", "team")):
-    """A band round the brow (over hair) with feathers standing up and back from behind it, one per
-    material in `feathers`."""
+def _band(half, axis, lo, hi, keep=None, power=0.62, segments=48):
+    """An open band round `axis` (0, 1, 2: x, y, z) from lo to hi along it, its cross-section the
+    matching section of _rounded_box(half, power): a rim or a strap that hugs a cap."""
+    u, w = [k for k in range(3) if k != axis]
+
+    def build(bm):
+        bmesh.ops.create_cone(bm, cap_ends=False, cap_tris=False, segments=segments, radius1=1.0, radius2=1.0, depth=1.0)
+        for v in bm.verts:
+            co = [0.0, 0.0, 0.0]
+            co[u] = math.copysign(abs(v.co.x) ** power, v.co.x) * half[u]
+            co[w] = math.copysign(abs(v.co.y) ** power, v.co.y) * half[w]
+            co[axis] = lo + (v.co.z + 0.5) * (hi - lo)
+            v.co = Vector(co)
+        if keep:
+            bmesh.ops.delete(bm, geom=[v for v in bm.verts if not keep(v.co)], context="VERTS")
+    return build
+
+
+def leather_cap(b, mat="leather", band="team", straps="dark_leather"):
+    """A close cap over the crown, shaped to the head box, with a band round its rim just above the
+    brow and two straps crossing over the top. Put `hair(top=False)` under it."""
     c = humanoid.HEAD_CENTER
-    ring = make_mesh("headband", cylinder(0.252, 0.252, 0.055, 20), band, smooth=True)
-    ring.scale = (1.0, 0.95, 1.0)
-    b.add(at(ring, 0, 0.012, c.z + 0.085), "head")
-    for k, mat in enumerate(feathers):
-        sx = (k - (len(feathers) - 1) / 2) * 0.11
-        up = Vector((sx * 1.4, 0.42, 1)).normalized()
-        base = Vector((sx, 0.2, c.z + 0.1))
-        vane = make_mesh("feather_%d" % k, sphere(1.0, sx=0.042, sy=0.013, sz=0.2, segments=10), mat, smooth=True)
-        place(vane, base + up * 0.2, x_axis=Vector((1, -sx * 3, 0)).normalized(), z_axis=up)
-        b.add(vane, "head")
-        quill = make_mesh("feather_quill_%d" % k, cylinder(0.009, 0.009, 0.1, 6), "dark_leather")
-        b.add(between(quill, base - up * 0.03, base + up * 0.06), "head")
+    centre = (c.x, c.y + 0.004, c.z + 0.01)
+    half = Vector((0.238, 0.229, 0.232))
+    rim = 0.06   # height of the rim above the centre
+
+    def part(name, build, material):
+        b.add(at(make_mesh(name, build, material, smooth=True), *centre), "head")
+
+    part("cap", _rounded_box(half, lambda co: co.z > rim, power=0.62, rings=(32, 28)), mat)
+    part("cap_band", _band(half + Vector((0.012, 0.012, 0)), 2, rim - 0.025, rim + 0.045), band)
+    if straps:
+        over = half + Vector((0.007, 0.007, 0.007))
+        for name, axis in (("cap_strap_front", 0), ("cap_strap_side", 1)):
+            part(name, _band(over, axis, -0.022, 0.022, keep=lambda co: co.z > rim + 0.03), straps)
 
 
-def club(b, side="R", length=0.74, head=0.13, mat="wood", head_mat="dark_wood", studs="bone"):
+def club(b, side="R", length=0.74, head=0.13, grip=0.0, mat="wood", head_mat="dark_wood", studs="bone", name="club"):
     """A heavy war club held like `sword` (it leaves the thumb side of the fist along SWORD_AXIS): a
-    shaft swelling into a big knobbed head ringed with bone studs, a leather-wrapped grip. Returns
-    {"axis": SWORD_AXIS, "head": rest-pose centre of the head, "tip"}."""
+    shaft swelling into a big knobbed head ringed with bone studs, a leather-wrapped grip. The shaft
+    and studs scale with `head`; `grip` lengthens the handle below the fist for a second hand.
+    Returns {"axis": SWORD_AXIS, "head": rest-pose centre of the head, "tip", "second_hand":
+    rest-pose point for the other fist, "parts"} (a second club gets another `name`)."""
     fist = humanoid.HAND[side]
     a = SWORD_AXIS
     side_axis = X * -1
     knob = fist + a * (length - head)
+    low = fist - a * grip   # the second hand's fist
+    k = head / 0.13
     bone = "forearm." + side
     parts = [
-        between(make_mesh("club_shaft", cylinder(0.032, 0.07, length - head + 0.06, 10), mat, smooth=True),
-                fist - a * 0.06, knob),
-        between(make_mesh("club_wrap", cylinder(0.037, 0.037, 0.13, 10), "dark_leather", smooth=True),
-                fist - a * 0.065, fist + a * 0.065),
-        at(make_mesh("club_pommel", sphere(0.045, segments=10), mat, smooth=True), *(fist - a * 0.085)),
+        between(make_mesh(name + "_shaft", cylinder(0.032 * k, 0.07 * k, length - head + grip + 0.06, 10), mat, smooth=True),
+                low - a * 0.06, knob),
+        between(make_mesh(name + "_wrap", cylinder(0.037 * k, 0.037 * k, grip + 0.13, 10), "dark_leather", smooth=True),
+                low - a * 0.065, fist + a * 0.065),
+        at(make_mesh(name + "_pommel", sphere(0.045 * k, segments=10), mat, smooth=True), *(low - a * 0.085)),
     ]
-    knob_mesh = make_mesh("club_head", sphere(head, sz=1.25, segments=14), head_mat, smooth=True)
+    knob_mesh = make_mesh(name + "_head", sphere(head, sz=1.25, segments=14), head_mat, smooth=True)
     parts.append(place(knob_mesh, knob, x_axis=side_axis, z_axis=a))
     across = side_axis.cross(a)
-    for k in range(6):
-        ang = 2 * math.pi * k / 6 + 0.3
+    for n in range(6):
+        ang = 2 * math.pi * n / 6 + 0.3
         out = (side_axis * math.cos(ang) + across * math.sin(ang)).normalized()
-        root = knob + a * (0.035 if k % 2 else -0.035) + out * head * 0.8
-        parts.append(between(make_mesh("club_stud_%d" % k, cylinder(0.03, 0.0, 0.085, 6), studs), root, root + out * 0.085))
+        root = knob + a * (0.035 * k if n % 2 else -0.035 * k) + out * head * 0.8
+        parts.append(between(make_mesh("%s_stud_%d" % (name, n), cylinder(0.03 * k, 0.0, 0.085 * k, 6), studs), root, root + out * 0.085 * k))
     tip = knob + a * head * 1.25
-    parts.append(between(make_mesh("club_stud_tip", cylinder(0.03, 0.0, 0.08, 6), studs), tip - a * 0.02, tip + a * 0.06))
+    parts.append(between(make_mesh(name + "_stud_tip", cylinder(0.03 * k, 0.0, 0.08 * k, 6), studs), tip - a * 0.02 * k, tip + a * 0.06 * k))
     for obj in parts:
         b.add(obj, bone)
-    return {"axis": a, "head": knob, "tip": tip + a * 0.06}
+    return {"axis": a, "head": knob, "tip": tip + a * 0.06 * k, "second_hand": low, "parts": parts}
 
 
 # --------------------------------------------------------------------------- swordsman kit

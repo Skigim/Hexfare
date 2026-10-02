@@ -49,8 +49,8 @@ The map draws sprite sheets, and units without a sheet fall back to a coloured t
   disappear, so exaggerate them:
   - The settler's mallet is half the figure's height.
   - A shovel read as a stick, so it was replaced with an axe.
-- **One signature prop or shape per unit.** It says what the unit is at a glance: club, feathers
-  and round shield, hat and staff with a donkey. A new unit must not be mistaken for an existing one
+- **One signature prop or shape per unit.** It says what the unit is at a glance: a big club swung
+  two-handed, hat and staff with a donkey. A new unit must not be mistaken for an existing one
   at a glance.
 - **Team colour on a large surface visible from every facing.** Examples are the tunic, the cloak and
   the saddle cloth, plus a small accent such as a crest or hat band. Only the material named `"team"`
@@ -73,7 +73,7 @@ art/lib/humanoid.py    base person: bones, outfit-dressed body, STAND, RIDE, bre
                        arm, reach
 art/lib/quadruped.py   base four-legged animal from a proportions table (DONKEY, HORSE), halter,
                        pack saddle, riding saddle, stand_idle, walk
-art/lib/gear.py        reusable kit: pauldron, helmet, sword, sabre, round_shield, hair, headband,
+art/lib/gear.py        reusable kit: pauldron, helmet, sword, sabre, round_shield, hair, leather_cap,
                        club, great_helm, greatsword, pointed_helmet, spear, tall_shield, cowl, quiver,
                        bow, arrow, loose_arrow, brimmed_hat, feathered_cap, hood, cloak, pouch, staff,
                        mallet, dust_puff
@@ -497,7 +497,10 @@ for name in ("<unit>_mask.png", "<unit>.png"):
 - **Walks and swings clip the cell edges.** The settler grew to 160×192 with anchor 0.7. Run the
   clipping check (section 7) on every full build. The warrior's cell is the tightest: its death
   only fits because the fall is centred in the cell (the root ends `back * 0.8` from the feet) and
-  the club arm lands last. Don't copy its cell size for a unit with a bigger death.
+  the club arm lands last, and its swing only fits because the club stays close to the body (over a
+  shoulder at either end, angled up across the front at the blow). Swung level at arm's length it
+  would run off the cell in some facing. Don't copy its cell size for a unit with a bigger death or
+  a wider swing.
 - **A quadruped's body bob must come from its legs.** The dip is
   `leg_len * (1 - cos(stride angle))`, so the hooves stay planted. Adding lean or bob by eye lifts
   the hooves off the ground. If you scale the animal, pass `leg_len=0.52 * scale`.
@@ -527,15 +530,23 @@ for name in ("<unit>_mask.png", "<unit>.png"):
   scale every distance in their poses (`leg_len`, fall offsets) with them.
 - **Keys are blended bone by bone, so held things swing through the body between them.** The
   spearman's spear spun through his head on the way from upright to an overhand thrust, and the
-  warrior's club passed through his head on the way to the windup. Add fitted in-between keys that
-  carry the item round the outside (the spearman's `tip`, `level` and `recover`, the warrior's
-  `lift`), and check every frame, not just the keys, for parts passing through each other. A quick
+  warrior's old overhead smash passed the club through his head on the way up. Add fitted in-between
+  keys that carry the item round the outside (the spearman's `tip`, `level` and `recover`; the
+  warrior's swing has a fitted key on every frame that moves), and check every frame, not just the
+  keys, for parts passing through each other. A quick
   check: pose the rig in Blender and test each held part against the body with
   `mathutils.bvhtree.BVHTree.overlap`, ignoring the hand that holds it.
 - **The rig has no wrist.** A held item is fixed to the forearm, so one modelled for one hold can't
   also sit right in a very different one. The archer's bow is modelled twice and toggled: upright
   for the full draw, and held at the side at rest, its string turned in toward the body (but far
-  enough round to miss the arm).
+  enough round to miss the arm). The warrior's club is modelled in each hand: with both hands on it,
+  the right-hand club can point out to his right but not across to his left (the left arm would
+  have to pass through the chest), so the left-hand one takes over once the swing has crossed the
+  front.
+- **Short arms meet only in front of the chest.** Both fists can share a grip only near the middle
+  of the chest, a little in front of it. A two-handed swing keeps the hands there and turns the
+  body to carry the weapon round (the warrior's `SWING` table); check that neither arm sinks into
+  the chest where it reaches across.
 - **Big heads and short arms can't draw a bow to the face.** The string would pass through the
   head. The archer's line of the shot runs beside the head (`AIM_X`), with the bow arm reaching
   across and the drawing hand at the side of the jaw.
@@ -558,9 +569,10 @@ Library inventory (see the docstrings for parameters):
   - Fitting: `arm(side, ...)` (the five arm angles), `reach` (fist and held item to a target).
 - **`gear`:**
   - Warrior kit: `pauldron`, `helmet(crest)`, `sword`, `sabre` (held like the sword, its blade
-    curved back toward the spine), `round_shield(face, board, boss)`.
-  - Tribal kit: `hair` (open at the face; `top=False` under a hat), `headband` (with feathers),
-    `club` (studded, held like the sword).
+    curved back toward the spine), `round_shield(face)`.
+  - Tribal kit: `hair` (open at the face; `top=False` under a hat), `leather_cap` (a band and
+    crossed straps; `hair(top=False)` under it), `club` (studded, held like the sword; `grip=`
+    lengthens the handle for a second hand, `name=` builds a second copy to toggle).
   - Swordsman kit: `great_helm`, `greatsword` (returns its blade axis and the second hand's grip).
   - Spearman kit: `pointed_helmet`, `spear` (planted for a given pose), `tall_shield`, `held_axis`.
   - Archer kit: `cowl`, `quiver`, `bow` (upright, or along `up`, for a given pose, with markers for
@@ -582,7 +594,7 @@ Every unit in `data/units.json` now has a sheet:
 
 | Unit | Class | Built from | Notes |
 |---|---|---|---|
-| warrior | melee | humanoid, tribal kit, round shield | studded club raised past the head (a fitted `lift` key) into an overhead smash |
+| warrior | melee | humanoid, tribal kit | big studded club swung two-handed across the front, every key fitted with `reach`; the club is modelled in each hand and toggled |
 | settler | civilian | humanoid, quadruped (donkey), rope | `build` role with a `"strike"` mark |
 | spearman | melee | humanoid, spearman kit | spear lowered to the hip and thrust forward, every key fitted with `reach` beside the hip |
 | swordsman | melee | humanoid, swordsman kit | both hands fitted to the grip in every key pose |
