@@ -49,9 +49,9 @@ The map draws sprite sheets, and units without a sheet fall back to a coloured t
   disappear, so exaggerate them:
   - The settler's mallet is half the figure's height.
   - A shovel read as a stick, so it was replaced with an axe.
-- **One signature prop or shape per unit.** It says what the unit is at a glance: sword and round
-  shield, hat and staff with a donkey. A new unit must not be mistaken for an existing one at a
-  glance.
+- **One signature prop or shape per unit.** It says what the unit is at a glance: club, feathers
+  and round shield, hat and staff with a donkey. A new unit must not be mistaken for an existing one
+  at a glance.
 - **Team colour on a large surface visible from every facing.** Examples are the tunic, the cloak and
   the saddle cloth, plus a small accent such as a crest or hat band. Only the material named `"team"`
   is tinted (see "Sheet contract" below).
@@ -73,9 +73,10 @@ art/lib/humanoid.py    base person: bones, outfit-dressed body, STAND, RIDE, bre
                        arm, reach
 art/lib/quadruped.py   base four-legged animal from a proportions table (DONKEY, HORSE), halter,
                        pack saddle, riding saddle, stand_idle, walk
-art/lib/gear.py        reusable kit: pauldron, helmet, sword, round_shield, great_helm, greatsword,
-                       pointed_helmet, spear, tall_shield, cowl, quiver, bow, arrow, brimmed_hat,
-                       hood, cloak, pouch, staff, mallet, dust_puff
+art/lib/gear.py        reusable kit: pauldron, helmet, sword, sabre, round_shield, hair, headband,
+                       club, great_helm, greatsword, pointed_helmet, spear, tall_shield, cowl, quiver,
+                       bow, arrow, loose_arrow, brimmed_hat, feathered_cap, hood, cloak, pouch, staff,
+                       mallet, dust_puff
 art/<unit>/build_<unit>.py   only what is unique to that unit, ends with sk.build(...)
         |
         |  E:\Blender\blender.exe -b --factory-startup --python art/<unit>/build_<unit>.py
@@ -355,7 +356,9 @@ A ranged unit's sheet must mark its `"release"`; `test_ranged_sheets_mark_their_
 ```
 
 `<godot>` is the path in `CLAUDE.md`. The preview shows the unit on real hex tiles in all six
-facings, with the team tint. Read the PNGs and check:
+facings, with the team tint. `res://scenes/unit_gallery.tscn` shows every unit side by side in every
+role (`--dir=se`, `--units=archer,warrior`, `--pause` to freeze each role on its key frame,
+`--screenshot=<png>`): use it to compare a unit with the others. Read the PNGs and check:
 - the size next to the tiles;
 - each facing points at its neighbour;
 - the stand (`base`) sits under the feet and the figure is not too wide for it;
@@ -492,9 +495,9 @@ for name in ("<unit>_mask.png", "<unit>.png"):
 - **A second actor hides behind the first** in some facings. Spread the actors apart (settler:
   person at (0.28, -0.5), donkey at (-0.32, 0.36), donkey scaled 1.12) and check all six facings.
 - **Walks and swings clip the cell edges.** The settler grew to 160×192 with anchor 0.7. Run the
-  clipping check (section 7) on every full build. The settler passes it. The warrior currently
-  fails it: its death touches the cell edge at frames 5–6 in all six facings, briefly, mid-fall.
-  This is a known flaw. Don't copy its cell size for a unit with a bigger death.
+  clipping check (section 7) on every full build. The warrior's cell is the tightest: its death
+  only fits because the fall is centred in the cell (the root ends `back * 0.8` from the feet) and
+  the club arm lands last. Don't copy its cell size for a unit with a bigger death.
 - **A quadruped's body bob must come from its legs.** The dip is
   `leg_len * (1 - cos(stride angle))`, so the hooves stay planted. Adding lean or bob by eye lifts
   the hooves off the ground. If you scale the animal, pass `leg_len=0.52 * scale`.
@@ -522,6 +525,24 @@ for name in ("<unit>_mask.png", "<unit>.png"):
 - **Big heads dwarf true-scale mounts and machines.** Beside the chunky humanoid a horse or a
   catapult at real proportions looks like a toy. Both are scaled 1.3 with `Body.moved(..., scale=)`;
   scale every distance in their poses (`leg_len`, fall offsets) with them.
+- **Keys are blended bone by bone, so held things swing through the body between them.** The
+  spearman's spear spun through his head on the way from upright to an overhand thrust, and the
+  warrior's club passed through his head on the way to the windup. Add fitted in-between keys that
+  carry the item round the outside (the spearman's `tip`, `level` and `recover`, the warrior's
+  `lift`), and check every frame, not just the keys, for parts passing through each other. A quick
+  check: pose the rig in Blender and test each held part against the body with
+  `mathutils.bvhtree.BVHTree.overlap`, ignoring the hand that holds it.
+- **The rig has no wrist.** A held item is fixed to the forearm, so one modelled for one hold can't
+  also sit right in a very different one. The archer's bow is modelled twice and toggled: upright
+  for the full draw, and held at the side at rest, its string turned in toward the body (but far
+  enough round to miss the arm).
+- **Big heads and short arms can't draw a bow to the face.** The string would pass through the
+  head. The archer's line of the shot runs beside the head (`AIM_X`), with the bow arm reaching
+  across and the drawing hand at the side of the jaw.
+- **Peaks hide faces.** The camera looks down at 40°, so a brim or peak sticking out over the brow
+  hides the eyes in the front facings. Keep peaks short and high (`gear.feathered_cap`).
+- **Curved blades bend toward the holder.** Held upright, the sabre's curve ran into the rider's
+  helmet; the resting arm slopes it forward instead.
 
 ---
 
@@ -536,12 +557,16 @@ Library inventory (see the docstrings for parameters):
   - Motion: `STAND`, `RIDE` (seated on a mount), `breathe`, `walk_legs`, `walk`.
   - Fitting: `arm(side, ...)` (the five arm angles), `reach` (fist and held item to a target).
 - **`gear`:**
-  - Warrior kit: `pauldron`, `helmet(crest)`, `sword`, `round_shield(face)`.
+  - Warrior kit: `pauldron`, `helmet(crest)`, `sword`, `sabre` (held like the sword, its blade
+    curved back toward the spine), `round_shield(face, board, boss)`.
+  - Tribal kit: `hair` (open at the face; `top=False` under a hat), `headband` (with feathers),
+    `club` (studded, held like the sword).
   - Swordsman kit: `great_helm`, `greatsword` (returns its blade axis and the second hand's grip).
   - Spearman kit: `pointed_helmet`, `spear` (planted for a given pose), `tall_shield`, `held_axis`.
-  - Archer kit: `cowl`, `quiver`, `bow` (upright for a given pose, with markers for a Cord string),
-    `arrow` (nocked for a given pose; toggle it).
-  - Clothing: `brimmed_hat`, `hood`, `cloak`, `pouch`.
+  - Archer kit: `cowl`, `quiver`, `bow` (upright, or along `up`, for a given pose, with markers for
+    a Cord string), `arrow` (nocked for a given pose; toggle it), `loose_arrow` (an arrow anywhere on
+    any bone: one in flight).
+  - Clothing: `brimmed_hat`, `feathered_cap`, `hood`, `cloak`, `pouch`.
   - Tools: `staff` (planted for a given pose), `mallet` (hand or belt) and `mallet_head`.
   - Effects: `dust_puff`.
 - **`quadruped`:**
@@ -557,12 +582,12 @@ Every unit in `data/units.json` now has a sheet:
 
 | Unit | Class | Built from | Notes |
 |---|---|---|---|
-| warrior | melee | humanoid, warrior kit | |
+| warrior | melee | humanoid, tribal kit, round shield | studded club raised past the head (a fitted `lift` key) into an overhead smash |
 | settler | civilian | humanoid, quadruped (donkey), rope | `build` role with a `"strike"` mark |
-| spearman | melee | humanoid, spearman kit | overhand thrust fitted with `reach` |
+| spearman | melee | humanoid, spearman kit | spear lowered to the hip and thrust forward, every key fitted with `reach` beside the hip |
 | swordsman | melee | humanoid, swordsman kit | both hands fitted to the grip in every key pose |
-| archer | ranged | humanoid, archer kit, `Cord` string | `"release"` mark |
-| horseman | mounted | quadruped (horse, scaled 1.3), humanoid rider parented to `horse.body` | trot, rear on attack, rolls over on death |
+| archer | ranged | humanoid, archer kit, feathered cap, `Cord` strings | side-on draw beside the head; two bows toggled (drawn, resting); the loosed arrow shows on the `"release"` frame |
+| horseman | mounted | quadruped (horse, scaled 1.3), humanoid rider parented to `horse.body` | sabre; trot, rear on attack, rolls over on death |
 | catapult | siege | custom engine `sk.Body` (scaled 1.3), humanoid crewman with a mallet | `"release"` mark; wheels roll a quarter turn per stride |
 
 A new unit that looks like one of these should start from its script. A new mount (an elephant, a

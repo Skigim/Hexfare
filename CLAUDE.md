@@ -17,7 +17,9 @@ Godot 4.7 is installed via WinGet (not on PATH):
   PNG after UI changes; screenshot mode ignores the real mouse cursor.
 - Rebuild the sprite-sheet warrior (Blender 5.1 at `E:\Blender\blender.exe`):
   `E:\Blender\blender.exe -b --factory-startup --python art/warrior/build_warrior.py`, then `--import`.
-  Preview: `<godot> --path . res://scenes/sprite_preview.tscn`. `art/` is hidden from Godot (`.gdignore`).
+  Preview: `<godot> --path . res://scenes/sprite_preview.tscn`; every unit in every role on one screen:
+  `<godot> --path . res://scenes/unit_gallery.tscn -- --pause --dir=se --screenshot=<png>`.
+  `art/` is hidden from Godot (`.gdignore`).
   Shared modelling/animation code is in `art/lib/` (spritekit, humanoid, gear, quadruped); build new
   units from it. After changing it, check the warrior and settler still match: `... build_warrior.py -- --out=<tmp>`
   and compare with `assets/units/warrior/`. **Before making or changing a unit sprite, read

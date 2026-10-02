@@ -5,8 +5,8 @@ facings by the shared pipeline (art/lib/spritekit.py).
     blender -b --factory-startup --python art/spearman/build_spearman.py [-- --only=idle,walk]
 
 Writes art/spearman/spearman.blend and assets/units/spearman/. At rest the spear stands planted
-beside the right foot; the attack is an overhand thrust. Arm poses that hold the spear at an
-angle are fitted with humanoid.reach, so the shaft points where the pose asks.
+beside the right foot; the attack lowers it level at the hip and drives it forward. Arm poses that
+hold the spear at an angle are fitted with humanoid.reach, so the shaft points where the pose asks.
 """
 import math
 import os
@@ -53,15 +53,17 @@ GUARD = dict(humanoid.STAND, **{
     "thigh.L": swing(6) @ raise_("L", 4),
 })
 
-WINDUP = dict(GUARD, **{
-    "spine": lean(-6) @ turn(-22), "head": lean(-4) @ turn(18),
-    "upperarm.L": swing(44) @ raise_("L", 18), "forearm.L": swing(70),
-    "thigh.R": swing(-14) @ raise_("R", 6), "thigh.L": swing(18) @ raise_("L", 6),
-    "shin.L": swing(-10),
+# The attack: the spear tips forward, comes level at the hip drawn back, drives forward and rises
+# again. Every key holds it beside the right hip (x about -0.4), so it never crosses the body.
+LEVEL = dict(GUARD, **{
+    "spine": turn(-18), "head": lean(-2) @ turn(16),
+    "upperarm.L": swing(40) @ raise_("L", 16), "forearm.L": swing(72),
+    "thigh.R": swing(-10) @ raise_("R", 6), "thigh.L": swing(14) @ raise_("L", 6), "shin.L": swing(-10),
 })
+LEVEL_HIPS = (0, 0, -0.02)
 THRUST = dict(GUARD, **{
-    "spine": lean(18) @ turn(14), "head": lean(-12) @ turn(-8),
-    "upperarm.L": swing(22) @ raise_("L", 24), "forearm.L": swing(64),
+    "spine": lean(14) @ turn(8), "head": lean(-10) @ turn(-6),
+    "upperarm.L": swing(30) @ raise_("L", 22), "forearm.L": swing(66),
     "thigh.R": swing(-18) @ raise_("R", 6), "thigh.L": swing(30) @ raise_("L", 6),
     "shin.L": swing(-26), "shin.R": swing(-8),
 })
@@ -76,8 +78,10 @@ def fit(name, rot, hand, axis, hips=(0, 0, 0), guess=(20, 10, 0, 40, 0)):
 
 
 def fit_poses():
-    fit("windup", WINDUP, (-0.3, 0.12, 1.08), (0, -1, -0.12), guess=(-20, 50, 0, 100, 0))
-    fit("thrust", THRUST, (-0.14, -0.24, 1.0), (0, -1, -0.3), THRUST_HIPS, guess=(80, 20, 0, 20, 0))
+    fit("tip", GUARD, (-0.39, -0.16, 0.78), (0, -0.55, 0.85), guess=(16, 18, 0, 70, -10))
+    fit("level", LEVEL, (-0.4, 0.14, 0.72), (0, -1, -0.04), LEVEL_HIPS, guess=(-5, 20, 0, 40, -10))
+    fit("thrust", THRUST, (-0.36, -0.2, 0.8), (0, -1, -0.24), THRUST_HIPS, guess=(30, 18, 0, 40, -10))
+    fit("recover", GUARD, (-0.39, -0.12, 0.76), (0, -0.75, 0.66), guess=(10, 18, 0, 50, -10))
     # Walking: the spear carried upright with its butt clear of the ground.
     guard_hand = sk.posed_point(humanoid.BONES, sk.pose(GUARD), "forearm.R", humanoid.HAND["R"])
     fit("carry", GUARD, guard_hand + Vector((0, 0.02, 0.07)), (0, -0.12, 1), guess=(16, 18, 0, 84, -10))
@@ -108,7 +112,8 @@ def walk(i, n, yaw=0.0):
 
 def attack(i, n, yaw=0.0):
     thrust = pose(FIT["thrust"], hips=THRUST_HIPS)
-    return keyed(i, [(0, pose(GUARD)), (2.5, pose(FIT["windup"])), (4, thrust), (5.2, thrust), (n, pose(GUARD))])
+    return keyed(i, [(0, pose(GUARD)), (1, pose(FIT["tip"])), (2, pose(FIT["level"], hips=LEVEL_HIPS)),
+                     (4, thrust), (5.2, thrust), (7, pose(FIT["recover"])), (n, pose(GUARD))])
 
 
 def hit(i, n, yaw=0.0):

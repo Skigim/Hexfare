@@ -76,8 +76,9 @@ def fit_poses():
     two_handed("windup", WINDUP, (-0.22, 0.02, 1.32), (0.1, 0.75, 0.45), guess=(150, 20, 0, 60, 0), guess_l=(140, 10, 0, 80, 0))
     two_handed("strike", STRIKE, (-0.08, -0.36, 0.9), (0, -1, -0.15), STRIKE_HIPS, guess=(80, 6, 0, 10, 0))
     two_handed("recoil", RECOIL, (-0.12, -0.24, 0.78), (-0.1, -0.2, 1), guess=(30, 10, 0, 60, 0))
-    # Walking: the blade rests on the right shoulder, one hand on the grip, the other arm free.
-    p, err = humanoid.reach(sk.pose(STANCE), "R", (-0.2, -0.2, 0.86), SWORD["axis"], (0.05, 0.75, 0.75), guess=(30, 20, 0, 90, 0))
+    # Walking: the blade rests on top of the right pauldron, outside the helm, one hand on the grip,
+    # the other arm free.
+    p, err = humanoid.reach(sk.pose(STANCE), "R", (-0.32, -0.18, 0.88), SWORD["axis"], (-0.08, 0.75, 0.75), guess=(30, 20, 0, 90, 0))
     print("swordsman: carry fitted, error %.3f" % err)
     FIT["carry"] = p["rot"]
 
