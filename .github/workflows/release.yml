@@ -1,0 +1,81 @@
+name: Release
+
+# Builds the Windows export and attaches it to the GitHub Release for a version tag.
+# Run manually (workflow_dispatch) with an existing tag to rebuild a release's asset.
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to build and attach to (e.g. v0.2.0)
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  GODOT_VERSION: 4.7-stable
+  TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  windows:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Cache Godot and export templates
+        id: cache-godot
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/godot
+            ~/.local/share/godot/export_templates
+          key: godot-export-${{ env.GODOT_VERSION }}-linux-x86_64
+
+      - name: Download Godot and export templates
+        if: steps.cache-godot.outputs.cache-hit != 'true'
+        run: |
+          base="https://github.com/godotengine/godot-builds/releases/download/${GODOT_VERSION}"
+          zip="Godot_v${GODOT_VERSION}_linux.x86_64.zip"
+          tpz="Godot_v${GODOT_VERSION}_export_templates.tpz"
+          curl -fsSL -o "$zip" "$base/$zip"
+          curl -fsSL -o "$tpz" "$base/$tpz"
+          curl -fsSL -o SHA512-SUMS.txt "$base/SHA512-SUMS.txt"
+          grep -E "[ *](${zip}|${tpz})\$" SHA512-SUMS.txt | sed -E 's/ \*/  /' | sha512sum -c -
+          mkdir -p ~/godot
+          unzip -q "$zip" -d ~/godot
+          mv ~/godot/Godot_v${GODOT_VERSION}_linux.x86_64 ~/godot/godot
+          chmod +x ~/godot/godot
+          # The .tpz holds a templates/ folder; Godot wants it at export_templates/<version>/
+          dest="$HOME/.local/share/godot/export_templates/${GODOT_VERSION/-/.}"
+          mkdir -p "$dest"
+          unzip -q "$tpz" -d "$RUNNER_TEMP/tpz"
+          mv "$RUNNER_TEMP/tpz/templates/"* "$dest/"
+
+      - name: Export Windows build
+        run: |
+          export GODOT="$HOME/godot/godot"
+          "$GODOT" --headless --path . --import
+          mkdir -p build/windows
+          "$GODOT" --headless --path . --export-release "Windows Desktop" build/windows/Hexfare.exe
+          test -s build/windows/Hexfare.exe
+
+      - name: Package
+        run: |
+          cd build/windows
+          zip -q "../Hexfare-${TAG}-windows-x86_64.zip" Hexfare.exe
+
+      - name: Attach to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          asset="build/Hexfare-${TAG}-windows-x86_64.zip"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --title "$TAG" --generate-notes --verify-tag
+          fi
+          gh release upload "$TAG" "$asset" --clobber

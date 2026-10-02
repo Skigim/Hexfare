@@ -11,3 +11,6 @@
 
 # Python bytecode (Blender scripts in art/)
 __pycache__/
+
+# Export output
+/build/
