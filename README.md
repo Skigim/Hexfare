@@ -206,14 +206,24 @@ to plan it, and add a test.
   `assets/units/warrior/` (sheet, team-colour mask, layout JSON). `-- --only=walk` / `--dirs=se`
   render just some animations or facings into a temp folder for a quick look; `--out=<dir>` writes
   the full sheets elsewhere. Unit scripts are short because the parts are shared, in `art/lib/`:
-  `spritekit.py` (materials, meshes, rigs, posing, ropes, camera, rendering, sheets), `humanoid.py`
-  (base body dressed from an outfit table, standing, breathing, walk cycle), `gear.py` (helmet,
-  sword, shield, hat, cloak, staff...) and `quadruped.py` (a four-legged body sized from a proportions
-  table, with a donkey preset, pack saddle and idle). `art/settler/build_settler.py` builds the settler, an adventurer
-  leading a pack donkey (two actors in one rig, joined by a rope), with idle, walk and build (it
-  hammers the ground with a mallet when founding a city; the city appears on the last blow, timed by
-  the sheet's `"marks"`). Settlers never fight, so they have no attack, hit or death; a role a sheet
-  lacks plays idle. Poses can show and hide parts (`sk.toggle`: the mallet moves from belt to hand). A sheet's JSON can size the stand drawn under
+  `spritekit.py` (materials, meshes, rigs, posing, ropes and taut cords, camera, rendering, sheets),
+  `humanoid.py` (base body dressed from an outfit table, standing, breathing, walk cycle, a riding
+  seat, and `reach`, which fits an arm so the fist and a held item land where a pose asks),
+  `gear.py` (helmets, sword and greatsword, shields, spear, bow, arrow, quiver, hat, hood, cloak,
+  staff, mallet...) and `quadruped.py` (a four-legged body sized from a proportions table, with
+  donkey and horse presets, pack and riding saddles, idle and walk). `art/settler/build_settler.py`
+  builds the settler, an adventurer leading a pack donkey (two actors in one rig, joined by a rope),
+  with idle, walk and build (it hammers the ground with a mallet when founding a city; the city
+  appears on the last blow, timed by the sheet's `"marks"`). Settlers never fight, so they have no
+  attack, hit or death; a role a sheet lacks plays idle. Every other unit has a sheet too: the
+  spearman (pointed helmet, tall oval shield, a long spear planted at rest and thrust overhand), the
+  swordsman (great helm, mail under a surcoat, a two-handed greatsword with both hands fitted to the
+  grip), the archer (hood and quiver; it nocks, draws a bow whose string follows the hand, and
+  looses), the horseman (a rider parented to a horse's body, so it follows the trot, the rear and
+  the fall) and the catapult (a wheeled engine built as its own bone table, with a crewman who
+  knocks out the release pin). Ranged sheets mark the attack frame the shot leaves (`"release"`);
+  the map plays the attack, launches the projectile on that frame and has the target flinch when
+  it lands. Poses can show and hide parts (`sk.toggle`: the mallet moves from belt to hand). A sheet's JSON can size the stand drawn under
   the unit (`"base"`). `UnitSprite` (`scripts/view/unit_sprite.gd`) plays
   a sheet with the owner's colour; `res://scenes/sprite_preview.tscn` shows all six facings on hex
   tiles (`--unit=settler`, `--anim=walk`, `--zoom=2`, `--screenshot=out.png`). On the map, any unit with a sheet is drawn as

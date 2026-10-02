@@ -1,0 +1,54 @@
+{
+ "sheet": "horseman.png",
+ "mask": "horseman_mask.png",
+ "cell": [
+  208,
+  224
+ ],
+ "columns": 16,
+ "fps": 12,
+ "anchor": [
+  104.0,
+  161.3
+ ],
+ "directions": [
+  "e",
+  "ne",
+  "nw",
+  "w",
+  "sw",
+  "se"
+ ],
+ "animations": {
+  "idle": {
+   "first": 0,
+   "frames": 16,
+   "loop": true
+  },
+  "walk": {
+   "first": 96,
+   "frames": 8,
+   "loop": true
+  },
+  "attack": {
+   "first": 144,
+   "frames": 9,
+   "loop": false
+  },
+  "hit": {
+   "first": 198,
+   "frames": 5,
+   "loop": false
+  },
+  "death": {
+   "first": 228,
+   "frames": 8,
+   "loop": false
+  }
+ },
+ "base": [
+  58,
+  22
+ ],
+ "note": "Cell index = first + direction * frames + frame. Directions follow Hex.DIRECTIONS."
+}
