@@ -5,7 +5,8 @@ Hexfare is a framework to iterate on, so small, focused changes are the easiest 
 ## Setup and tests
 
 Install Godot 4.7 (standard build). Run all headless tests with `.\tools\run_tests.ps1`
-(about 25 s). `-Only <name fragment>` runs one suite. The UI smoke test needs a window:
+(about 25 s). `-Only <name fragment>` runs one suite. On Linux/macOS use `GODOT=<path> tools/run_tests.sh [fragment]`.
+GitHub Actions runs the same headless suites on every push to `main` and every PR. The UI smoke test needs a window:
 `godot --path . res://tests/ui_smoke_test.tscn`. README.md has the details.
 
 ## Architecture rules
