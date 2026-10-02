@@ -36,7 +36,11 @@ These are in CLAUDE.md and worth reading before a code change:
 - **Status**: `blocked`, `needs-design`
 
 Milestones are SemVer versions with a theme (`v0.2.0` and so on). Closing a milestone means
-tagging `vMAJOR.MINOR.PATCH` and publishing a GitHub Release.
+tagging `vMAJOR.MINOR.PATCH` and publishing a GitHub Release. Pushing a `v*.*.*` tag runs
+`.github/workflows/release.yml`, which exports the Windows build with the preset in
+`export_presets.cfg`, creates the Release if it doesn't exist and attaches
+`Hexfare-<tag>-windows-x86_64.zip`. To export locally (needs the 4.7 export templates installed):
+`godot --headless --path . --export-release "Windows Desktop" build/windows/Hexfare.exe`.
 
 ## Licence
 

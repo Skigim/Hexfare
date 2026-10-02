@@ -15,6 +15,9 @@ whole AI games to catch regressions.
    From a terminal: `godot --path <this folder>`.
 3. On the title screen pick a map size, the number of AI opponents and (optionally) a seed.
 
+Windows users can skip step 1 and download `Hexfare-<version>-windows-x86_64.zip` from the
+[Releases](https://github.com/Skigim/Hexfare/releases) page (unzip and run `Hexfare.exe`).
+
 First turn: select your settler and press **B** to plan founding your capital, pick a technology,
 then press **Enter** to submit the turn. Turns are planned, then resolved all at once: the city
 appears when the turn resolves, and the next turn asks what it should build. The big button in the
