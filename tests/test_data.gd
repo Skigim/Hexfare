@@ -52,22 +52,41 @@ func test_unit_sprite_sheets() -> void:
 ## On the map, units with a sprite sheet are animated figures; the rest keep their tokens.
 func test_unit_views_use_sprite_sheets() -> void:
 	var game := make_flat_game()
+	# Every unit in the data has a sheet; a unit added without one (a mod) is drawn as a token.
+	Defs.units["sheetless"] = Defs.units.warrior.duplicate()
 	var views: Array[UnitView] = []
-	for type in ["warrior", "settler", "archer"]:
+	for type in ["warrior", "settler", "sheetless", "archer"]:
 		var v := UnitView.new()
 		v.sync_from(spawn(game, type, 0, 2 + views.size() * 2, 2), Color.BLUE, true)
 		views.append(v)
+	Defs.units.erase("sheetless")
 	assert_true(views[0].sprite != null, "a warrior is drawn as a figure")
 	assert_true(views[1].sprite != null, "a settler is drawn as a figure")
-	assert_true(views[2].sprite == null, "an archer keeps its token")
+	assert_true(views[2].sprite == null, "a unit without a sheet keeps its token")
 	assert_true(views[1].base_radii().x > views[0].base_radii().x, "the settler pair stands on a wider base")
 	views[1].sprite.act("attack")
 	assert_eq(views[1].sprite.role, "idle", "a role the sheet lacks plays idle")
 	var strike := views[1].founding_time()
 	assert_true(strike > 0.0 and strike < views[1].sprite.role_time("build"), "the settler's last blow lands inside its build")
 	assert_eq(views[0].founding_time(), 0.0, "a warrior has no build")
+	# A ranged figure shoots on its attack's "release" mark; a token shoots at once.
+	var release := views[3].shoot(Vector2(300, 0))
+	assert_true(release > 0.0 and release < views[3].sprite.role_time("attack"), "the archer looses inside its attack")
+	assert_eq(views[3].sprite.role, "attack", "the archer plays its attack when it shoots")
+	assert_eq(views[2].shoot(Vector2(300, 0)), 0.0, "a token shoots at once")
 	for v in views:
 		v.free()
+
+
+## Every ranged unit with a sheet marks when its shot leaves, so the projectile and the hit line up.
+func test_ranged_sheets_mark_their_release() -> void:
+	for id in Defs.units:
+		if not UnitSprite.has_sheet(id) or int(Defs.units[id].get("range", 0)) <= 0:
+			continue
+		var s := UnitSprite.create(id, Color.WHITE)
+		var release := s.mark_time("attack", "release")
+		assert_true(release > 0.0 and release < s.role_time("attack"), "%s releases inside its attack" % id)
+		s.free()
 
 
 ## While a settler is still building a city, the map leaves its territory unclaimed.

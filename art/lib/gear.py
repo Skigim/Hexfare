@@ -7,10 +7,11 @@ land there.
 """
 import math
 
+import bmesh
 from mathutils import Vector
 
 import humanoid
-from spritekit import X, Y, Z, at, between, box, cylinder, make_mesh, place, posed_point, quat, shell, sphere
+from spritekit import X, Y, Z, at, between, box, cylinder, make_mesh, marker, place, posed_point, quat, shell, sphere
 
 
 # --------------------------------------------------------------------------- warrior kit
@@ -67,6 +68,184 @@ def round_shield(b, side="L", face="team"):
         obj = make_mesh(name, build, mat, smooth=name == "shield_boss")
         place(obj, fist + normal * offset, y_axis=up, z_axis=normal)
         b.add(obj, "forearm." + side)
+
+
+# --------------------------------------------------------------------------- swordsman kit
+
+def great_helm(b, mat="steel", visor="dark_steel", band="gold"):
+    """Flat-topped bucket helmet that hides the face, with a dark eye slit and a brow band."""
+    c = humanoid.HEAD_CENTER
+    b.add(at(make_mesh("great_helm", cylinder(0.255, 0.245, 0.4, 16), mat, smooth=True), c.x, c.y + 0.01, c.z + 0.02), "head")
+    b.add(at(make_mesh("great_helm_top", sphere(0.245, sz=0.32, cut_below=0.0, segments=16), mat, smooth=True), c.x, c.y + 0.01, c.z + 0.22), "head")
+    b.add(at(make_mesh("great_helm_band", cylinder(0.262, 0.262, 0.045, 16), band), c.x, c.y + 0.01, c.z + 0.1), "head")
+    b.add(at(make_mesh("great_helm_slit", box(0.36, 0.06, 0.04), visor, bevel=0.01), c.x, c.y - 0.225, c.z + 0.0), "head")
+    b.add(at(make_mesh("great_helm_ridge", box(0.035, 0.05, 0.3), visor, bevel=0.01), c.x, c.y - 0.24, c.z - 0.08), "head")
+
+
+GREATSWORD_GRIP = 0.15   # fist to where the second hand holds the grip
+
+
+def greatsword(b, side="R"):
+    """Two-handed sword, built like `sword` (the blade leaves the thumb side of the fist, edges in
+    the swing plane) but longer, with a grip long enough for both hands. Returns {"axis": rest-pose
+    blade direction, "second_hand": rest-pose point for the other fist, "tip"}."""
+    fist = humanoid.HAND[side]
+    tilt = math.radians(15)
+    blade_dir = Vector((0, -math.cos(tilt), math.sin(tilt)))
+    for name, build, mat, offset in (
+            ("grip", cylinder(0.027, 0.027, 0.3), "dark_leather", -0.07),
+            ("pommel", sphere(0.046), "gold", -0.235),
+            ("crossguard", box(0.036, 0.036, 0.36), "gold", 0.1),
+            ("blade", box(0.022, 0.84, 0.1), "steel", 0.54),
+            ("fuller", box(0.026, 0.62, 0.025), "dark_steel", 0.47),
+            ("tip", cylinder(0.072, 0.0, 0.12, 4), "steel", 1.02)):
+        obj = make_mesh("greatsword_" + name, build, mat, smooth=name == "pommel", bevel=0.008 if name == "crossguard" else 0.0)
+        if name in ("grip", "tip"):
+            place(obj, fist + blade_dir * offset, x_axis=X * -1, z_axis=blade_dir)
+            if name == "tip":
+                obj.scale = (0.3, 1, 1)
+        else:
+            place(obj, fist + blade_dir * offset, x_axis=X * -1, y_axis=blade_dir)
+        b.add(obj, "forearm." + side)
+    return {"axis": blade_dir, "second_hand": fist - blade_dir * GREATSWORD_GRIP, "tip": fist + blade_dir * 1.08}
+
+
+# --------------------------------------------------------------------------- spearman kit
+
+def pointed_helmet(b, mat="steel", rim="dark_steel"):
+    """Tall pointed cap with a rim, nasal guard and a spike on top: reads differently from the
+    warrior's round crested helmet."""
+    b.add(at(make_mesh("helmet", sphere(0.258, sy=0.95, sz=1.32, cut_below=0.0, segments=16), mat, smooth=True), 0, 0.01, 1.27), "head")
+    b.add(at(make_mesh("helmet_rim", cylinder(0.265, 0.265, 0.05, 16), rim), 0, 0.01, 1.28), "head")
+    b.add(at(make_mesh("helmet_spike", cylinder(0.04, 0.0, 0.12, 8), rim), 0, 0.01, 1.64), "head")
+    b.add(at(make_mesh("nasal", box(0.04, 0.03, 0.15), mat, bevel=0.01), 0, -0.235, 1.21), "head")
+
+
+def held_axis(b, held, side, direction):
+    """The rest-pose direction riding that forearm which points along `direction` (armature
+    space) in the pose `held`: for modelling a held pole so it lands at an angle in a pose."""
+    return humanoid.arm_rotation(held["rot"], side).inverted() @ Vector(direction).normalized()
+
+
+def spear(b, held, side="R", length=1.85, tilt=(4, 6), mat="wood"):
+    """A long spear with a broad leaf head, its butt planted on the ground in the pose `held` and
+    its shaft leaning `tilt` degrees (forward, outward). Returns {"axis": rest-pose shaft
+    direction (butt to head), "grip": hand to butt distance, "foot", "tip": rest-pose points}."""
+    rest_hand = humanoid.HAND[side]
+    hand = posed_point(b.bones, held, "forearm." + side, rest_hand)
+    fwd, out = tilt
+    up = quat(X, fwd) @ quat(Y, out if side == "L" else -out) @ Z
+    grip = (hand.z - 0.01) / up.z
+    axis = held_axis(b, held, side, up)
+    lo, hi = rest_hand - axis * grip, rest_hand + axis * (length - grip)
+    bone = "forearm." + side
+    b.add(between(make_mesh("spear_shaft", cylinder(0.032, 0.028, length, 8), mat, smooth=True), lo, hi), bone)
+    b.add(between(make_mesh("spear_butt", cylinder(0.0, 0.036, 0.08, 8), "dark_steel"), lo - axis * 0.01, lo + axis * 0.06), bone)
+    b.add(between(make_mesh("spear_socket", cylinder(0.042, 0.034, 0.1, 8), "dark_steel"), hi - axis * 0.05, hi + axis * 0.04), bone)
+    head = make_mesh("spear_head", sphere(1.0, sx=0.095, sy=0.035, sz=0.19, segments=12), "steel", smooth=True)
+    between(head, hi + axis * 0.02, hi + axis * 0.36)
+    b.add(head, bone)
+    return {"axis": axis, "grip": grip, "foot": lo, "tip": hi + axis * 0.36, "length": length}
+
+
+def tall_shield(b, side="L", face="team", size=(0.5, 0.8)):
+    """Oval body shield with a steel rib and boss, held like round_shield (face along the forearm,
+    angled outward) so it stands upright when the forearm comes up in a guard."""
+    fist = humanoid.HAND[side]
+    out = 1 if side == "L" else -1
+    normal = Vector((out * math.sin(math.radians(30)), 0, -math.cos(math.radians(30))))
+    up = Vector((0, -1, 0))
+    w, h = size
+    for name, build, mat, offset, scale in (
+            ("shield_board", cylinder(0.5, 0.5, 0.045, 24), "wood", 0.05, (w, h, 1)),
+            ("shield_face", cylinder(0.5, 0.5, 0.012, 24), face, 0.077, (w - 0.07, h - 0.07, 1)),
+            ("shield_rib", box(0.05, h - 0.1, 0.02), "steel", 0.085, (1, 1, 1)),
+            ("shield_boss", sphere(0.08, cut_below=0.0), "steel", 0.08, (1, 1, 1))):
+        obj = make_mesh(name, build, mat, smooth=name == "shield_boss", bevel=0.008 if name == "shield_rib" else 0.0)
+        place(obj, fist + normal * offset, y_axis=up, z_axis=normal)
+        obj.scale = scale
+        b.add(obj, "forearm." + side)
+
+
+# --------------------------------------------------------------------------- archer kit
+
+def cowl(b, mat="team", tail=True):
+    """A hood up over the head, open at the face, with a pointed tail hanging down the back."""
+    def build(bm):
+        bmesh.ops.create_uvsphere(bm, u_segments=16, v_segments=10, radius=0.275)
+        bmesh.ops.delete(bm, geom=[v for v in bm.verts if v.co.y < -0.12 and v.co.z < 0.15], context="VERTS")
+    c = humanoid.HEAD_CENTER
+    obj = make_mesh("cowl", build, mat, smooth=True)
+    obj.scale = (1, 1.04, 1.02)
+    b.add(at(obj, c.x, c.y + 0.02, c.z + 0.02), "head")
+    if tail:
+        b.add(between(make_mesh("cowl_tail", cylinder(0.075, 0.0, 0.28, 10), mat, smooth=True),
+                      Vector((0, 0.2, c.z + 0.1)), Vector((0, 0.36, c.z - 0.14))), "head")
+
+
+def quiver(b, mat="leather", fletching="team", arrows=4):
+    """A quiver on the back, its mouth by the right shoulder with arrow fletchings showing, and a
+    strap across the chest."""
+    lo, hi = Vector((0.1, 0.22, 0.6)), Vector((-0.14, 0.2, 1.06))
+    along = (hi - lo).normalized()
+    b.add(between(make_mesh("quiver", cylinder(0.072, 0.085, (hi - lo).length, 10), mat, smooth=True), lo, hi), "spine")
+    b.add(between(make_mesh("quiver_rim", cylinder(0.09, 0.09, 0.04, 10), "dark_leather"), hi - along * 0.03, hi + along * 0.01), "spine")
+    for k in range(arrows):
+        a = 2 * math.pi * k / arrows
+        base = hi + Vector((math.cos(a) * 0.035, math.sin(a) * 0.035, 0))
+        b.add(between(make_mesh("quiver_arrow_%d" % k, cylinder(0.012, 0.012, 0.1, 6), "wood"), base, base + along * 0.1), "spine")
+        vane = make_mesh("quiver_fletch_%d" % k, box(0.02, 0.07, 0.11), fletching, bevel=0.008)
+        place(vane, base + along * 0.15, x_axis=Vector((math.cos(a), math.sin(a), 0)), z_axis=along)
+        b.add(vane, "spine")
+    strap = make_mesh("quiver_strap", box(0.05, 0.03, 0.5), "dark_leather")
+    place(strap, Vector((0.0, -0.172, 0.82)), x_axis=Vector((1, 0, 0.75)).normalized(), y_axis=Y)
+    b.add(strap, "spine")
+
+
+def bow(b, held, side="L", aim=(0, -1, 0), height=1.2, depth=0.2, mat="wood"):
+    """A longbow held at its grip in that fist, standing upright with its back toward `aim` in the
+    pose `held` (the full draw). Returns {"top", "bottom": markers on the tips for a Cord string,
+    "up", "forward": the rest-pose axes, "tips": rest-pose tip points}."""
+    rot = humanoid.arm_rotation(held["rot"], side).inverted()
+    up, fwd = rot @ Z, rot @ Vector(aim).normalized()
+    fist = humanoid.HAND[side]
+    count = 10
+    pts = []
+    for k in range(count + 1):
+        t = 2 * k / count - 1
+        pts.append(fist + up * (t * height / 2) - fwd * (depth * t * t) + fwd * 0.02)
+    bone = "forearm." + side
+    for k in range(count):
+        t = abs(2 * (k + 0.5) / count - 1)
+        r = 0.03 - 0.016 * t
+        b.add(between(make_mesh("bow_%d" % k, cylinder(r, r, (pts[k + 1] - pts[k]).length + 0.012, 8), mat, smooth=True), pts[k], pts[k + 1]), bone)
+    b.add(between(make_mesh("bow_grip", cylinder(0.038, 0.038, 0.13, 8), "dark_leather", smooth=True), fist - up * 0.065, fist + up * 0.065), bone)
+    for name, p in (("bow_tip_top", pts[-1]), ("bow_tip_bottom", pts[0])):
+        b.add(at(make_mesh(name, sphere(0.022, segments=8), "dark_leather", smooth=True), *p), bone)
+    top = b.add(marker("bow_string_top", pts[-1]), bone)
+    bottom = b.add(marker("bow_string_bottom", pts[0]), bone)
+    return {"top": top, "bottom": bottom, "up": up, "forward": fwd, "tips": (pts[0], pts[-1])}
+
+
+def arrow(b, held, side="R", aim=(0, -1, 0), length=0.78, fletching="team", name="arrow"):
+    """An arrow nocked in that fist, pointing along `aim` in the pose `held`. Returns its parts,
+    to show or hide with sk.toggle."""
+    d = held_axis(b, held, side, aim)
+    nock = humanoid.HAND[side] + d * 0.02
+    tip = nock + d * length
+    bone = "forearm." + side
+    side_axis = d.cross(Z) if abs(d.dot(Z)) < 0.9 else d.cross(X)
+    parts = [
+        between(make_mesh(name + "_shaft", cylinder(0.013, 0.013, length, 6), "pale_wood"), nock, tip),
+        between(make_mesh(name + "_head", cylinder(0.032, 0.0, 0.09, 4), "steel"), tip - d * 0.01, tip + d * 0.08),
+    ]
+    for k, x in enumerate((side_axis, side_axis.cross(d))):
+        vane = make_mesh("%s_fletch_%d" % (name, k), box(0.008, 0.11, 0.045), fletching)
+        place(vane, nock + d * 0.08, x_axis=x.normalized(), y_axis=d)
+        parts.append(vane)
+    for obj in parts:
+        b.add(obj, bone)
+    return parts
 
 
 # --------------------------------------------------------------------------- travelling clothes
