@@ -36,8 +36,7 @@ choice has several benefits:
 - An agent can make and review art: it writes code, renders, then looks at the PNGs.
 - No third-party assets or licences are involved.
 
-The 3D KayKit pipeline in `scripts/view/unit_model.gd` is a separate experiment. The map draws
-sprite sheets, and units without a sheet fall back to a coloured token.
+The map draws sprite sheets, and units without a sheet fall back to a coloured token.
 
 ### Art direction
 

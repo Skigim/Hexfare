@@ -20,58 +20,6 @@ func test_art_and_icons_exist() -> void:
 			assert_true(FileAccess.file_exists("res://assets/icons/%s.png" % icon), "%s icon %s" % [id, icon])
 
 
-func test_unit_models_build() -> void:
-	for id in Defs.units:
-		var model: Dictionary = Defs.units[id].get("model", {})
-		if model.is_empty():
-			continue
-		var rig: String = model.get("rig", "Medium")
-		assert_true(ResourceLoader.exists(UnitModel.CHARACTER % rig), "%s rig %s" % [id, rig])
-		for hand in UnitModel.HAND_SLOTS:
-			if model.has(hand):
-				assert_true(ResourceLoader.exists(UnitModel.WEAPON % model[hand].scene), "%s %s %s" % [id, hand, model[hand].scene])
-		var unit := UnitModel.create(model)
-		assert_true(unit != null, "%s builds" % id)
-		if unit == null:
-			continue
-		for role in unit.clips:
-			assert_true(unit.has_clip(unit.clips[role]), "%s %s clip %s" % [id, role, unit.clips[role]])
-		unit.free()
-
-
-## The hand slots must turn KayKit weapons the way the animations expect: a stab drives the
-## blade forward and the guard pose holds a shield upright, facing forward (the rig faces +Z).
-func test_hand_slots_follow_the_animations() -> void:
-	var unit := UnitModel.create({"right": {"scene": "sword_A"}, "left": {"scene": "shield_A", "rotation": [0, 90, 0]}})
-	var blade := _held_axis(unit, "right", "Melee_1H_Attack_Stab", 0.72, Vector3.UP)
-	assert_true(blade.z > 0.8, "stab drives the blade forward: %s" % blade)
-	var face := _held_axis(unit, "left", "Melee_Blocking", 0.0, Vector3.BACK)
-	var up := _held_axis(unit, "left", "Melee_Blocking", 0.0, Vector3.UP)
-	assert_true(face.z > 0.8 and up.y > 0.9, "guard holds the shield up and forward: face %s up %s" % [face, up])
-	var layered := UnitModel.layered("Medium", {"clip": "Walking_A", "left_arm": "Melee_Blocking"})
-	assert_true(_held_axis(unit, "left", layered, 0.5, Vector3.BACK).z > 0.8, "guarded walk keeps the shield forward")
-	unit.free()
-
-
-## Poses the skeleton from a clip at time t and returns where a held piece's local axis points.
-func _held_axis(unit: UnitModel, hand: String, clip: String, t: float, axis: Vector3) -> Vector3:
-	var anim := unit.player.get_animation(clip)
-	var sk := unit.skeleton
-	for i in anim.get_track_count():
-		var bone := sk.find_bone(anim.track_get_path(i).get_concatenated_subnames())
-		if bone < 0:
-			continue
-		match anim.track_get_type(i):
-			Animation.TYPE_ROTATION_3D:
-				sk.set_bone_pose_rotation(bone, anim.rotation_track_interpolate(i, t))
-			Animation.TYPE_POSITION_3D:
-				sk.set_bone_pose_position(bone, anim.position_track_interpolate(i, t))
-	var slot: Dictionary = UnitModel.HAND_SLOTS[hand]
-	var item: Node3D = unit.find_child(hand.capitalize() + "Hand", true, false).get_child(0).get_child(0)
-	var hand_basis := sk.get_bone_global_pose(sk.find_bone(slot.bone)).basis
-	return (hand_basis * slot.basis * item.basis * axis).normalized()
-
-
 ## Sprite-sheet units: every role exists in all six facings, frames lie inside the sheet, the mask
 ## matches it, and a step toward each hex neighbour picks that neighbour's facing.
 func test_unit_sprite_sheets() -> void:
