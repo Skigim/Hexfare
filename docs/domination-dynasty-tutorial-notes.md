@@ -125,7 +125,8 @@ tick 1/6), with a tutorial ("your moves from the last round were executed as pla
   was gone, the collector sat on a mountain tile collecting iron, and my scout moved one hex per
   tick toward the north-east. The neutral camp was untouched (1000/1000), since I'd given it no
   order.
-- The city's territory border grew by two hexes and a flag icon appeared on the city banner.
+- The city's territory border grew by two hexes. A flag icon on the city banner is the trained
+  settler, ready in the city after its 1-round training (not an equipped flag).
 - Numbers before and after (not all from the round, since the user was also at the game):
   iron 171 -> 257, horses 176 -> 179, gold 3848 -> 3937, science 860 -> 868, Power 980 -> 1380,
   city value 876 -> 1277.
